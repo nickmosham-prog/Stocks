@@ -58,30 +58,35 @@ volume baseline before the first scan, since nothing has been fetched yet.
 ## Email alerts
 
 Alerts are off by default until you configure real credentials (the shipped
-`app_password: "CHANGE_ME"` deliberately disables sending). To turn them on:
+`app_password: "CHANGE_ME"` in `settings.yaml` deliberately disables
+sending). **Never put your real App Password in `config/settings.yaml`** -
+that file is tracked by git and would end up committed. Instead:
 
 1. Create a **Gmail App Password**: Google Account -> Security -> 2-Step
    Verification -> App passwords. (Requires 2-Step Verification to be
    enabled on the account.) This is a 16-character password scoped to one
    app - not your real Gmail password, and you can revoke it any time.
-2. Edit `config/settings.yaml`'s `alerts:` section:
+2. Copy the secrets template and edit the copy:
+   ```bash
+   cp config/secrets.yaml.example config/secrets.yaml
+   ```
    ```yaml
+   # config/secrets.yaml - git-ignored, never committed
    alerts:
-     enabled: true
-     alpha_score_threshold: 80     # 0-100, lower = more (noisier) alerts
-     cooldown_minutes: 60          # min gap between alerts for the same ticker
      email:
-       smtp_host: "smtp.gmail.com"
-       smtp_port: 587
        from_address: "you@gmail.com"
        app_password: "xxxx xxxx xxxx xxxx"   # the App Password from step 1
        to_address: "you@gmail.com"           # can be a different address
    ```
+   `config/secrets.yaml` is layered on top of `config/settings.yaml` at
+   startup (see `app/config.py`), so you only need to list the keys you're
+   overriding. `config/settings.yaml` still controls `enabled`,
+   `alpha_score_threshold`, and `cooldown_minutes`.
 3. Restart `python main.py`.
 
-Using a non-Gmail provider works too - just change `smtp_host`/`smtp_port`
-to that provider's SMTP settings; `app_password` becomes whatever
-credential that provider uses for SMTP login.
+Using a non-Gmail provider works too - just override `smtp_host`/
+`smtp_port` in `config/secrets.yaml` as well; `app_password` becomes
+whatever credential that provider uses for SMTP login.
 
 **Note:** this alert is delivered by email only, from wherever `main.py` is
 running. There's no push notification, SMS, or "live" dashboard hosted

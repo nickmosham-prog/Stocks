@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+config/secrets.yaml
 data/*.db
 data/*.db-journal
 data/*.db-wal
