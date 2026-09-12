@@ -2,6 +2,11 @@
 # US-listed tickers. Edit freely - one symbol per line. Restart the app to
 # pick up changes. Keeping this list to a few hundred names (rather than
 # "the whole market") keeps yfinance batch calls fast and avoids rate limits.
+#
+# IMPORTANT: always quote a ticker that reads as a YAML keyword, or YAML will
+# silently turn it into true/false instead of a stock symbol - this bit us
+# with ON (ON Semiconductor). Quote any of: on/off/yes/no/true/false (any
+# capitalization), e.g. "ON", "NO".
 
 tickers:
   # Mega-cap tech / most-watched
@@ -30,7 +35,7 @@ tickers:
   - SMCI
   - ARM
   - MRVL
-  - ON
+  - "ON"
   - LRCX
   - KLAC
   - ASML

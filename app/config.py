@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import functools
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+log = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SETTINGS_PATH = REPO_ROOT / "config" / "settings.yaml"
@@ -72,6 +75,17 @@ def load_watchlist() -> list[str]:
     seen = set()
     out = []
     for t in tickers:
+        if isinstance(t, bool):
+            # YAML parses unquoted on/off/yes/no/true/false as booleans, so
+            # a ticker like ON or NO silently turns into True/False instead
+            # of a stock symbol. Skip it loudly rather than sending garbage
+            # like "TRUE" to the data source every cycle.
+            log.warning(
+                "watchlist.yaml has an unquoted value that YAML read as a "
+                "boolean (%s) instead of a ticker - quote it, e.g. \"ON\". Skipping.",
+                t,
+            )
+            continue
         symbol = str(t).strip().upper()
         if symbol and symbol not in seen:
             seen.add(symbol)
