@@ -111,6 +111,16 @@ CREATE TABLE IF NOT EXISTS news_items (
 );
 CREATE INDEX IF NOT EXISTS idx_news_items_symbol_published ON news_items(symbol, published_at DESC);
 
+-- One row per email alert actually sent for a symbol, used to enforce the
+-- per-symbol cooldown so the same ticker doesn't re-alert every cycle.
+CREATE TABLE IF NOT EXISTS alert_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    alpha_score REAL,
+    sent_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alert_log_symbol_sent ON alert_log(symbol, sent_at DESC);
+
 -- Operational log: one row per scan/refresh run, surfaced in the UI status widget.
 CREATE TABLE IF NOT EXISTS scan_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app import db
+from app import alerts, db
 from app.config import load_settings, load_watchlist
 from app.datasource.base import DataSource
 from app.datasource.cache import TTLCache
@@ -160,6 +160,7 @@ def run_scan(source: DataSource, session: str) -> dict:
                 except Exception:
                     log.exception("enrichment failed for %s", symbol)
 
+    all_rows = []
     for symbol, data in prelim.items():
         enrich = enrichment.get(symbol)
         options_score = enrich["options_score"] if enrich else None
@@ -208,6 +209,7 @@ def run_scan(source: DataSource, session: str) -> dict:
                 row,
             )
         db.upsert("latest_snapshot", ["symbol"], {**row, "enriched": int(enrich is not None)})
+        all_rows.append(row)
 
         if enrich and enrich.get("flagged_contracts"):
             for c in enrich["flagged_contracts"]:
@@ -232,6 +234,11 @@ def run_scan(source: DataSource, session: str) -> dict:
                             c["last_price"],
                         ),
                     )
+
+    try:
+        alerts.process_alerts(all_rows)
+    except Exception:
+        log.exception("alert processing failed")
 
     finished_at = datetime.now(tz=timezone.utc).isoformat()
     error_summary = f"{len(failed)} symbols failed: {', '.join(failed[:20])}" if failed else None

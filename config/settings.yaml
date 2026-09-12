@@ -65,6 +65,21 @@ scoring:
       vol_oi: 0.70
       skew: 0.30
 
+# Email alert sent when a ticker's Alpha Score crosses `alpha_score_threshold`.
+# Uses a Gmail "App Password" (Google Account -> Security -> 2-Step
+# Verification -> App passwords), NOT your real Gmail password. Leave
+# app_password blank/CHANGE_ME to disable alerting without touching `enabled`.
+alerts:
+  enabled: true
+  alpha_score_threshold: 80
+  cooldown_minutes: 60   # don't re-alert the same symbol more often than this
+  email:
+    smtp_host: "smtp.gmail.com"
+    smtp_port: 587
+    from_address: "you@gmail.com"
+    app_password: "CHANGE_ME"
+    to_address: "you@gmail.com"
+
 # Keyword tags used to classify news headlines. Informational only - not
 # part of the numeric alpha score.
 news_tags:
