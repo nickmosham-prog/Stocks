@@ -1,0 +1,78 @@
+# Stock Volume & Alpha Dashboard - configuration
+# Edit these values and restart `python main.py` to apply changes.
+
+app:
+  host: "127.0.0.1"
+  port: 8000
+  timezone: "America/New_York"
+  db_path: "data/stocks.db"
+  log_path: "logs/stocks.log"
+  log_level: "INFO"
+
+# How often (minutes) each scan loop runs during its active window.
+schedule:
+  premarket_scan_minutes: 5
+  premarket_window_start: "07:00"
+  premarket_window_end: "09:30"
+  intraday_scan_minutes: 5
+  intraday_window_start: "09:30"
+  intraday_window_end: "16:00"
+  eod_refresh_time: "16:30"
+
+# Historical lookback used to build the "normal volume for this time of day"
+# baseline that RVOL is measured against.
+volume_profile:
+  lookback_days: 20
+  bucket_minutes: 5
+
+# How many tickers (ranked by cheap RVOL+breakout score) get the more
+# expensive per-ticker options + news enrichment each cycle.
+enrichment:
+  top_n: 30
+  news_cache_minutes: 30
+  options_cache_minutes: 15
+  max_workers: 5
+  max_retries: 3
+  retry_backoff_seconds: 2
+
+# Batch size for bulk price/volume pulls (yfinance multi-ticker download).
+data_fetch:
+  batch_size: 50
+
+# Scoring weights and caps. Alpha score is a weighted blend of the
+# component scores below, renormalized when a component is unavailable
+# (e.g. a ticker with no listed options).
+scoring:
+  alpha_weights:
+    rvol: 0.40
+    breakout: 0.35
+    options: 0.25
+  rvol:
+    cap: 5.0
+  breakout:
+    gap_cap_pct: 5.0
+    range_cap_atr_multiple: 1.5
+    level_cap_pct: 2.0
+    weights:
+      gap: 0.40
+      range: 0.35
+      level: 0.25
+  options:
+    vol_oi_cap: 5.0
+    skew_cap_ln: 1.0986122886681098  # ln(3)
+    min_contract_volume: 100
+    weights:
+      vol_oi: 0.70
+      skew: 0.30
+
+# Keyword tags used to classify news headlines. Informational only - not
+# part of the numeric alpha score.
+news_tags:
+  earnings: ["earnings", "eps", "quarterly results", "guidance", "revenue"]
+  fda_clinical: ["fda", "clinical trial", "phase 1", "phase 2", "phase 3", "approval"]
+  upgrade_downgrade: ["upgrade", "downgrade", "price target", "initiates coverage", "rating"]
+  merger_acquisition: ["acquire", "acquisition", "merger", "buyout", "takeover"]
+  insider: ["insider buying", "insider selling", "13d", "13g", "form 4"]
+  partnership: ["partnership", "collaboration", "licensing deal", "joint venture"]
+  litigation: ["lawsuit", "investigation", "sec probe", "class action"]
+  macro: ["fed", "rate decision", "cpi", "jobs report", "inflation"]

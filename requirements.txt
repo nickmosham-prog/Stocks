@@ -1,0 +1,10 @@
+yfinance>=0.2.40
+pandas>=2.0
+numpy>=1.24
+fastapi>=0.110
+uvicorn>=0.29
+apscheduler>=3.10,<4.0
+pyyaml>=6.0
+tzdata; sys_platform == "win32"
+pytest>=7.0
+

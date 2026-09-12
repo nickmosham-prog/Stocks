@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Stock Volume & Alpha Dashboard</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">&#9650;</span>
+      <span class="brand-name">Volume &amp; Alpha Dashboard</span>
+    </div>
+    <div class="status" id="status-bar">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">connecting...</span>
+      <span class="status-sep">&middot;</span>
+      <span id="status-time">--</span>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="all">Top Alpha</button>
+    <button class="tab" data-tab="premarket">Pre-Market</button>
+    <button class="tab" data-tab="regular">Intraday</button>
+    <button class="tab" data-tab="options">Options Flow</button>
+    <button class="tab" data-tab="news">News</button>
+  </nav>
+
+  <main>
+    <section id="table-view">
+      <table id="rankings-table">
+        <thead>
+          <tr>
+            <th data-sort="symbol">Symbol</th>
+            <th data-sort="price">Price</th>
+            <th data-sort="gap_pct">Gap %</th>
+            <th data-sort="rvol">RVOL</th>
+            <th data-sort="breakout_score">Breakout</th>
+            <th data-sort="options_score">Options</th>
+            <th>News</th>
+            <th data-sort="alpha_score">Alpha Score</th>
+          </tr>
+        </thead>
+        <tbody id="rankings-body">
+          <tr><td colspan="8" class="empty">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="options-view" hidden>
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Expiration</th>
+            <th>Type</th>
+            <th>Strike</th>
+            <th>Volume</th>
+            <th>Open Interest</th>
+            <th>Vol/OI</th>
+          </tr>
+        </thead>
+        <tbody id="options-body">
+          <tr><td colspan="7" class="empty">Pick a symbol from Top Alpha to see its options flow, or wait for the next scan.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="news-view" hidden>
+      <ul id="news-list" class="news-list">
+        <li class="empty">Loading news...</li>
+      </ul>
+    </section>
+  </main>
+
+  <aside id="drilldown" class="drilldown" hidden>
+    <div class="drilldown-header">
+      <h2 id="drilldown-symbol">--</h2>
+      <button id="drilldown-close" aria-label="Close">&times;</button>
+    </div>
+    <div id="drilldown-body"></div>
+  </aside>
+
+  <footer class="footnote">
+    Free/delayed data via Yahoo Finance (yfinance) &mdash; unofficial, best-effort. Not financial advice.
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

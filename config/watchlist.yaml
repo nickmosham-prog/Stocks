@@ -1,0 +1,177 @@
+# Default watchlist: curated, liquid, and historically volatile/high-volume
+# US-listed tickers. Edit freely - one symbol per line. Restart the app to
+# pick up changes. Keeping this list to a few hundred names (rather than
+# "the whole market") keeps yfinance batch calls fast and avoids rate limits.
+
+tickers:
+  # Mega-cap tech / most-watched
+  - AAPL
+  - MSFT
+  - GOOGL
+  - AMZN
+  - META
+  - NVDA
+  - TSLA
+  - AVGO
+  - AMD
+  - NFLX
+  - CRM
+  - ORCL
+  - ADBE
+  - INTC
+  - QCOM
+  - TXN
+  - MU
+  - CSCO
+  - IBM
+  - NOW
+
+  # Semis / AI-adjacent momentum names
+  - SMCI
+  - ARM
+  - MRVL
+  - ON
+  - LRCX
+  - KLAC
+  - ASML
+  - TSM
+  - PLTR
+  - AI
+  - SOUN
+  - CRWD
+  - PANW
+  - SNOW
+  - NET
+  - DDOG
+
+  # EV / clean energy
+  - RIVN
+  - LCID
+  - NIO
+  - XPEV
+  - LI
+  - CHPT
+  - PLUG
+  - FSLR
+  - ENPH
+  - RUN
+
+  # Broad market / index ETFs (liquid, widely watched)
+  - SPY
+  - QQQ
+  - IWM
+  - DIA
+  - VXX
+  - UVXY
+  - SOXL
+  - TQQQ
+  - SQQQ
+  - ARKK
+
+  # Financials
+  - JPM
+  - BAC
+  - WFC
+  - GS
+  - MS
+  - C
+  - SCHW
+  - COIN
+  - SOFI
+  - PYPL
+  - V
+  - MA
+  - AXP
+
+  # Healthcare / biotech (higher volatility on catalysts)
+  - UNH
+  - LLY
+  - PFE
+  - MRNA
+  - JNJ
+  - ABBV
+  - BMY
+  - GILD
+  - VRTX
+  - REGN
+  - BIIB
+  - CVS
+  - ISRG
+
+  # Small/mid-cap biotech known for volume spikes on trial/FDA news
+  - SAVA
+  - CRSP
+  - NVAX
+  - BNTX
+  - SRPT
+  - EDIT
+  - BEAM
+  - RXRX
+
+  # Consumer / retail
+  - WMT
+  - COST
+  - TGT
+  - HD
+  - LOW
+  - NKE
+  - SBUX
+  - MCD
+  - DIS
+  - CMG
+  - LULU
+  - ETSY
+  - EBAY
+
+  # Meme / retail-trader favorites (historically high unusual volume)
+  - GME
+  - AMC
+  - BBBY
+  - BB
+  - RIOT
+  - MARA
+  - CLSK
+  - MSTR
+  - HOOD
+  - DKNG
+
+  # Industrials / energy
+  - XOM
+  - CVX
+  - OXY
+  - SLB
+  - BA
+  - CAT
+  - GE
+  - F
+  - GM
+  - UPS
+  - FDX
+
+  # Communications / media
+  - T
+  - VZ
+  - TMUS
+  - WBD
+  - PARA
+  - SNAP
+  - PINS
+  - UBER
+  - LYFT
+  - ABNB
+  - RBLX
+  - U
+
+  # Misc high-beta / frequently-screened names
+  - SPCE
+  - DJT
+  - CVNA
+  - AFRM
+  - UPST
+  - ROKU
+  - DOCU
+  - ZM
+  - SHOP
+  - BABA
+  - JD
+  - PDD
