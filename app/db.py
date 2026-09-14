@@ -66,6 +66,9 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
     "options_activity": {
         "implied_volatility": "REAL",
     },
+    "alert_log": {
+        "kind": "TEXT NOT NULL DEFAULT 'general'",
+    },
 }
 
 
@@ -80,11 +83,30 @@ def _run_column_migrations() -> None:
 
 
 def init_db() -> None:
+    """Creates tables, migrates existing ones to the current column set, then
+    creates indexes - in that order. Indexes must come last: on an existing
+    database, an index on a newly-added column (e.g. alert_log.kind) would
+    fail with "no such column" if created before the column-migration step
+    that adds it. schema.sql has no semicolons inside string literals or
+    comments, so this naive split on ";" is safe for this file specifically.
+    """
     conn = get_connection()
     with open(SCHEMA_PATH, "r") as f:
-        conn.executescript(f.read())
+        schema_sql = f.read()
+
+    table_statements, index_statements = [], []
+    for statement in schema_sql.split(";"):
+        stripped = statement.strip()
+        if not stripped:
+            continue
+        target = index_statements if stripped.upper().startswith("CREATE INDEX") else table_statements
+        target.append(stripped + ";")
+
+    conn.executescript("\n".join(table_statements))
     conn.commit()
     _run_column_migrations()
+    conn.executescript("\n".join(index_statements))
+    conn.commit()
 
 
 def upsert(table: str, key_columns: list[str], row: dict) -> None:

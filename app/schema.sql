@@ -122,13 +122,17 @@ CREATE INDEX IF NOT EXISTS idx_news_items_symbol_published ON news_items(symbol,
 
 -- One row per email alert actually sent for a symbol, used to enforce the
 -- per-symbol cooldown so the same ticker doesn't re-alert every cycle.
+-- `kind` ('general' or 'buy_setup') keeps the two alert tiers' cooldowns
+-- independent, so a general heads-up doesn't block a later BUY Setup email
+-- for the same symbol, or vice versa.
 CREATE TABLE IF NOT EXISTS alert_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'general',
     alpha_score REAL,
     sent_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_alert_log_symbol_sent ON alert_log(symbol, sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_log_symbol_kind_sent ON alert_log(symbol, kind, sent_at DESC);
 
 -- Operational log: one row per scan/refresh run, surfaced in the UI status widget.
 CREATE TABLE IF NOT EXISTS scan_runs (

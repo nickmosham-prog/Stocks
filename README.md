@@ -62,6 +62,26 @@ volume baseline before the first scan, since nothing has been fetched yet.
 
 ## Email alerts
 
+There are **two alert tiers**, both under `alerts:` in `config/settings.yaml`:
+
+- **General** (`alerts.alpha_score_threshold`, default 80) - a heads-up
+  whenever a ticker's Alpha Score crosses this bar. Subject line starts
+  with "Stock alert:".
+- **BUY Setup** (`alerts.buy_setup`, default threshold 88) - a stricter,
+  separate tier that only fires when Alpha Score clears its own higher
+  bar **and** the breakout is bullish **and** has actually *held* for
+  `scoring.breakout.hold_confirm_minutes` (default 15 min) - not just
+  triggered once. Subject line starts with "BUY Setup:". Both tiers can
+  fire independently for the same ticker (each has its own cooldown), and
+  either can be turned off on its own via its `enabled` flag.
+
+Despite the name, **"BUY Setup" describes a stronger combination of
+signals the tool tracks - it is not a trade instruction.** It doesn't know
+your risk tolerance, position sizing, or account size, and it has no
+track record proving these signals predict a good trade. Do your own
+analysis (and consider your own stop-loss/risk plan) before acting on
+either alert.
+
 Alerts are off by default until you configure real credentials (the shipped
 `app_password: "CHANGE_ME"` in `settings.yaml` deliberately disables
 sending). **Never put your real App Password in `config/settings.yaml`** -

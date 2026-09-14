@@ -71,14 +71,29 @@ scoring:
       vol_oi: 0.70
       skew: 0.30
 
-# Email alert sent when a ticker's Alpha Score crosses `alpha_score_threshold`.
-# Uses a Gmail "App Password" (Google Account -> Security -> 2-Step
-# Verification -> App passwords), NOT your real Gmail password. Leave
-# app_password blank/CHANGE_ME to disable alerting without touching `enabled`.
+# Email alerts. Two tiers: a general heads-up when Alpha Score crosses
+# `alpha_score_threshold`, and a stricter "BUY Setup" tier (buy_setup: below)
+# for a stronger combined signal. Both use the same Gmail "App Password"
+# (Google Account -> Security -> 2-Step Verification -> App passwords),
+# NOT your real Gmail password. Leave app_password blank/CHANGE_ME to
+# disable both without touching `enabled`.
 alerts:
   enabled: true
   alpha_score_threshold: 80
   cooldown_minutes: 60   # don't re-alert the same symbol more often than this
+
+  # Stricter second tier: fires a separate "BUY Setup" email only when a
+  # ticker clears a higher Alpha Score bar AND its breakout has actually
+  # held (see scoring.breakout.hold_confirm_minutes above), not just
+  # triggered once. Runs alongside the alert above, doesn't replace it.
+  # Screening only, same as everything else here - not a trade instruction.
+  buy_setup:
+    enabled: true
+    alpha_score_threshold: 88
+    require_bullish_direction: true
+    require_confirmed_breakout: true
+    cooldown_minutes: 60
+
   email:
     smtp_host: "smtp.gmail.com"
     smtp_port: 587

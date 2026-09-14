@@ -1,8 +1,19 @@
-"""Email alert when a ticker's Alpha Score crosses a configurable threshold.
+"""Email alerts. Two tiers, both configured under `alerts` in
+config/settings.yaml:
 
-One email per scan cycle summarizing every newly-qualifying ticker (not one
-email per ticker), with a per-symbol cooldown so the same name doesn't
-re-alert every 5 minutes while it stays hot.
+- **general**: fires when a ticker's Alpha Score crosses `alpha_score_threshold`.
+- **buy_setup**: a stricter, separate tier under `alerts.buy_setup` - fires
+  only when Alpha Score clears a higher bar AND the breakout is bullish AND
+  it has actually *held* (see scoring.breakout.hold_confirm_minutes), not
+  just triggered once. Runs alongside the general tier, doesn't replace it.
+
+Each tier sends at most one summary email per scan cycle (not one per
+ticker), with its own independent per-symbol cooldown, so a general
+heads-up on a symbol doesn't block (or get blocked by) a later BUY Setup
+email for that same symbol.
+
+This is a screening tool, not investment advice: "BUY Setup" describes a
+stronger combination of signals the tool tracks, not an instruction.
 """
 
 from __future__ import annotations
@@ -21,21 +32,21 @@ log = logging.getLogger(__name__)
 _warned_unconfigured = False
 
 
-def _last_alert_time(symbol: str) -> datetime | None:
+def _last_alert_time(symbol: str, kind: str) -> datetime | None:
     with db.cursor() as cur:
         cur.execute(
-            "SELECT sent_at FROM alert_log WHERE symbol = ? ORDER BY sent_at DESC LIMIT 1",
-            (symbol,),
+            "SELECT sent_at FROM alert_log WHERE symbol = ? AND kind = ? ORDER BY sent_at DESC LIMIT 1",
+            (symbol, kind),
         )
         row = cur.fetchone()
     return datetime.fromisoformat(row["sent_at"]) if row else None
 
 
-def _record_alert(symbol: str, alpha_score: float, sent_at: datetime) -> None:
+def _record_alert(symbol: str, alpha_score: float, sent_at: datetime, kind: str) -> None:
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO alert_log (symbol, alpha_score, sent_at) VALUES (?, ?, ?)",
-            (symbol, alpha_score, sent_at.isoformat()),
+            "INSERT INTO alert_log (symbol, kind, alpha_score, sent_at) VALUES (?, ?, ?, ?)",
+            (symbol, kind, alpha_score, sent_at.isoformat()),
         )
 
 
@@ -53,13 +64,7 @@ def _is_configured(email_cfg: dict) -> bool:
     return configured
 
 
-def _format_email(qualifying: list[dict]) -> tuple[str, str]:
-    if len(qualifying) == 1:
-        subject = f"Stock alert: {qualifying[0]['symbol']} Alpha Score {qualifying[0]['alpha_score']:.0f}"
-    else:
-        symbols = ", ".join(r["symbol"] for r in qualifying)
-        subject = f"Stock alert: {len(qualifying)} tickers above threshold ({symbols})"
-
+def _format_table(qualifying: list[dict]) -> str:
     lines = ["Ticker".ljust(8) + "Alpha".rjust(7) + "  Price".rjust(9) + "   RVOL".rjust(8) + "  Gap%".rjust(8) + "  Session"]
     lines.append("-" * 60)
     for r in qualifying:
@@ -69,9 +74,43 @@ def _format_email(qualifying: list[dict]) -> tuple[str, str]:
         lines.append(
             f"{r['symbol']:<8}{r['alpha_score']:>7.0f}{price:>10}{rvol_str:>9}{gap_str:>9}  {r['session']}"
         )
-    lines.append("")
-    lines.append("Free/delayed data via Yahoo Finance. Not financial advice.")
-    return subject, "\n".join(lines)
+    return "\n".join(lines)
+
+
+def _format_email(qualifying: list[dict]) -> tuple[str, str]:
+    if len(qualifying) == 1:
+        subject = f"Stock alert: {qualifying[0]['symbol']} Alpha Score {qualifying[0]['alpha_score']:.0f}"
+    else:
+        symbols = ", ".join(r["symbol"] for r in qualifying)
+        subject = f"Stock alert: {len(qualifying)} tickers above threshold ({symbols})"
+
+    body = _format_table(qualifying)
+    body += "\n\nFree/delayed data via Yahoo Finance. Not financial advice."
+    return subject, body
+
+
+def _format_buy_setup_email(qualifying: list[dict]) -> tuple[str, str]:
+    if len(qualifying) == 1:
+        subject = f"BUY Setup: {qualifying[0]['symbol']} Alpha Score {qualifying[0]['alpha_score']:.0f}, breakout confirmed"
+    else:
+        symbols = ", ".join(r["symbol"] for r in qualifying)
+        subject = f"BUY Setup: {len(qualifying)} confirmed breakouts ({symbols})"
+
+    body = (
+        "Stronger combined signal: high Alpha Score + bullish breakout that has\n"
+        "actually held (not just triggered once).\n\n"
+    )
+    body += _format_table(qualifying)
+    body += "\n\nHold time:\n"
+    for r in qualifying:
+        minutes = round(r["breakout_hold_minutes"]) if r.get("breakout_hold_minutes") is not None else "?"
+        body += f"  {r['symbol']}: held {minutes}m above the prior day's high\n"
+    body += (
+        "\nThis is a screening signal describing what the tool tracks, not a\n"
+        "trade instruction - do your own analysis before acting.\n"
+        "Free/delayed data via Yahoo Finance. Not financial advice."
+    )
+    return subject, body
 
 
 def _send_email(email_cfg: dict, subject: str, body: str) -> bool:
@@ -90,21 +129,16 @@ def _send_email(email_cfg: dict, subject: str, body: str) -> bool:
         return False
 
 
-def process_alerts(rows: list[dict]) -> None:
-    """Given every scored row from a scan cycle, email any that newly cross
-    the Alpha Score threshold (respecting the per-symbol cooldown)."""
-    settings = load_settings()
-    if not settings.get("alerts", "enabled", default=False):
-        return
-
-    email_cfg = settings.get("alerts", "email", default={})
-    if not _is_configured(email_cfg):
-        return
-
-    threshold = settings.get("alerts", "alpha_score_threshold", default=80)
-    cooldown = timedelta(minutes=settings.get("alerts", "cooldown_minutes", default=60))
-    now = datetime.now(tz=timezone.utc)
-
+def _process_tier(
+    rows: list[dict],
+    email_cfg: dict,
+    kind: str,
+    threshold: float,
+    cooldown: timedelta,
+    now: datetime,
+    extra_filter,
+    format_fn,
+) -> None:
     qualifying = []
     for row in rows:
         alpha = row.get("alpha_score")
@@ -113,7 +147,9 @@ def process_alerts(rows: list[dict]) -> None:
         # otherwise sail straight past this guard and fire an alert.
         if not is_valid(alpha) or alpha < threshold:
             continue
-        last = _last_alert_time(row["symbol"])
+        if extra_filter is not None and not extra_filter(row):
+            continue
+        last = _last_alert_time(row["symbol"], kind)
         if last is not None and (now - last) < cooldown:
             continue
         qualifying.append(row)
@@ -122,8 +158,62 @@ def process_alerts(rows: list[dict]) -> None:
         return
 
     qualifying.sort(key=lambda r: r["alpha_score"], reverse=True)
-    subject, body = _format_email(qualifying)
+    subject, body = format_fn(qualifying)
     if _send_email(email_cfg, subject, body):
         for row in qualifying:
-            _record_alert(row["symbol"], row["alpha_score"], now)
-        log.info("sent alert email for %d ticker(s): %s", len(qualifying), ", ".join(r["symbol"] for r in qualifying))
+            _record_alert(row["symbol"], row["alpha_score"], now, kind)
+        log.info(
+            "sent %s alert email for %d ticker(s): %s",
+            kind, len(qualifying), ", ".join(r["symbol"] for r in qualifying),
+        )
+
+
+def _is_confirmed_bullish_breakout(row: dict) -> bool:
+    return bool(row.get("breakout_confirmed")) and row.get("breakout_direction") == "bullish"
+
+
+def process_alerts(rows: list[dict]) -> None:
+    """Given every scored row from a scan cycle, run both alert tiers."""
+    settings = load_settings()
+    if not settings.get("alerts", "enabled", default=False):
+        return
+
+    email_cfg = settings.get("alerts", "email", default={})
+    if not _is_configured(email_cfg):
+        return
+
+    now = datetime.now(tz=timezone.utc)
+
+    _process_tier(
+        rows,
+        email_cfg,
+        kind="general",
+        threshold=settings.get("alerts", "alpha_score_threshold", default=80),
+        cooldown=timedelta(minutes=settings.get("alerts", "cooldown_minutes", default=60)),
+        now=now,
+        extra_filter=None,
+        format_fn=_format_email,
+    )
+
+    buy_cfg = settings.get("alerts", "buy_setup", default={})
+    if buy_cfg.get("enabled", False):
+        require_bullish = buy_cfg.get("require_bullish_direction", True)
+        require_confirmed = buy_cfg.get("require_confirmed_breakout", True)
+
+        def _buy_filter(row: dict) -> bool:
+            if require_confirmed and not row.get("breakout_confirmed"):
+                return False
+            if require_bullish and row.get("breakout_direction") != "bullish":
+                return False
+            return True
+
+        _process_tier(
+            rows,
+            email_cfg,
+            kind="buy_setup",
+            threshold=buy_cfg.get("alpha_score_threshold", 88),
+            cooldown=timedelta(minutes=buy_cfg.get("cooldown_minutes", 60)),
+            now=now,
+            extra_filter=_buy_filter,
+            format_fn=_format_buy_setup_email,
+        )
