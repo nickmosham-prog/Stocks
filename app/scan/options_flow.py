@@ -5,21 +5,31 @@ ratio + call/put skew). Not a real options-flow/sweep feed - see README.
 from __future__ import annotations
 
 import math
+import statistics
 
 from app.config import load_settings
 
 
+def _average_iv(contracts: list[dict]) -> float | None:
+    ivs = [c["implied_volatility"] for c in contracts if c.get("implied_volatility") is not None]
+    return statistics.mean(ivs) if ivs else None
+
+
 def compute_options_activity(contracts: list[dict] | None) -> dict:
-    """Returns {options_score, call_put_ratio, max_vol_oi_ratio, flagged_contracts}.
+    """Returns {options_score, call_put_ratio, max_vol_oi_ratio,
+    avg_implied_volatility, flagged_contracts}.
 
     options_score is None when the symbol has no listed options (excluded
-    from the alpha score entirely, not treated as zero).
+    from the alpha score entirely, not treated as zero). Implied volatility
+    is informational context (options are "expensive" or "cheap" right now)
+    - it does not feed into the numeric score.
     """
     if not contracts:
         return {
             "options_score": None,
             "call_put_ratio": None,
             "max_vol_oi_ratio": None,
+            "avg_implied_volatility": None,
             "flagged_contracts": [],
         }
 
@@ -54,9 +64,15 @@ def compute_options_activity(contracts: list[dict] | None) -> dict:
         + weights.get("skew", 0.30) * skew_component * 100.0
     )
 
+    # Prefer IV of the contracts that actually triggered the flag (most
+    # relevant to "what would it cost to trade the unusual activity right
+    # now"); fall back to the whole chain if nothing was flagged.
+    avg_iv = _average_iv(flagged) if flagged else _average_iv(contracts)
+
     return {
         "options_score": options_score,
         "call_put_ratio": call_put_ratio,
         "max_vol_oi_ratio": max_vol_oi_ratio,
+        "avg_implied_volatility": avg_iv,
         "flagged_contracts": sorted(flagged, key=lambda c: c["vol_oi_ratio"], reverse=True)[:20],
     }

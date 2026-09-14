@@ -53,6 +53,12 @@ scoring:
     gap_cap_pct: 5.0
     range_cap_atr_multiple: 1.5
     level_cap_pct: 2.0
+    # How long a break above/below the prior day's high/low must hold
+    # (in consecutive scan cycles, roughly this many minutes) before the
+    # dashboard marks it "confirmed" instead of just a fresh trigger. A
+    # single instantaneous cross is easy to fake out; holding for a while
+    # is a stronger signal.
+    hold_confirm_minutes: 15
     weights:
       gap: 0.40
       range: 0.35

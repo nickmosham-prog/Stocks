@@ -15,12 +15,21 @@ def test_breakout_level_pct_above_prior_high():
     result = breakout.compute_breakout(current_price=110.0, today_high=110.0, today_low=105.0, prior=_prior())
     assert result["breakout_level_pct"] > 0
     assert result["breakout_direction"] == "bullish"
+    assert result["level_broken"] is True
 
 
 def test_breakout_level_pct_below_prior_low():
     result = breakout.compute_breakout(current_price=90.0, today_high=95.0, today_low=90.0, prior=_prior())
     assert result["breakout_level_pct"] > 0
     assert result["breakout_direction"] == "bearish"
+    assert result["level_broken"] is True
+
+
+def test_level_not_broken_when_price_inside_prior_range():
+    # price is up on the day (gap) but still within yesterday's high/low
+    result = breakout.compute_breakout(current_price=101.0, today_high=101.5, today_low=100.5, prior=_prior())
+    assert result["breakout_direction"] == "bullish"  # directional bias from gap
+    assert result["level_broken"] is False  # but no actual level break yet
 
 
 def test_breakout_score_is_capped_between_0_and_100():

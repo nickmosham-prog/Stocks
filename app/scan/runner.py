@@ -79,6 +79,7 @@ def _score_symbol(symbol: str, bars: pd.DataFrame, session: str, bucket_minutes:
             "breakout_level_pct": None,
             "breakout_score": None,
             "breakout_direction": None,
+            "level_broken": False,
         }
 
     prelim = alpha_score.preliminary_score(rv_score, b["breakout_score"])
@@ -160,15 +161,32 @@ def run_scan(source: DataSource, session: str) -> dict:
                 except Exception:
                     log.exception("enrichment failed for %s", symbol)
 
+    hold_threshold = settings.get("scoring", "breakout", "hold_confirm_minutes", default=15)
+    with db.cursor() as cur:
+        cur.execute("SELECT symbol, breakout_direction, breakout_holding_since FROM latest_snapshot")
+        prev_state = {row["symbol"]: dict(row) for row in cur.fetchall()}
+
     all_rows = []
     for symbol, data in prelim.items():
         enrich = enrichment.get(symbol)
         options_score = enrich["options_score"] if enrich else None
         call_put_ratio = enrich["call_put_ratio"] if enrich else None
         max_vol_oi_ratio = enrich["max_vol_oi_ratio"] if enrich else None
+        avg_implied_volatility = enrich["avg_implied_volatility"] if enrich else None
         has_recent_news = bool(enrich["has_recent_news"]) if enrich else False
 
         final_score = alpha_score.compute_alpha_score(data["rvol_score"], data["breakout_score"], options_score)
+
+        prev = prev_state.get(symbol, {})
+        hold_state = breakout.update_hold_state(
+            level_broken=data["level_broken"],
+            direction=data["breakout_direction"],
+            now=now_et(),
+            prev_holding_since=prev.get("breakout_holding_since"),
+            prev_direction=prev.get("breakout_direction"),
+        )
+        hold_minutes = hold_state["hold_minutes"]
+        breakout_confirmed = bool(hold_minutes is not None and hold_minutes >= hold_threshold)
 
         row = {
             "symbol": symbol,
@@ -184,9 +202,13 @@ def run_scan(source: DataSource, session: str) -> dict:
             "breakout_level_pct": data["breakout_level_pct"],
             "breakout_score": data["breakout_score"],
             "breakout_direction": data["breakout_direction"],
+            "breakout_holding_since": hold_state["holding_since"],
+            "breakout_hold_minutes": hold_minutes,
+            "breakout_confirmed": int(breakout_confirmed),
             "options_score": options_score,
             "call_put_ratio": call_put_ratio,
             "max_vol_oi_ratio": max_vol_oi_ratio,
+            "avg_implied_volatility": avg_implied_volatility,
             "has_recent_news": int(has_recent_news),
             "alpha_score": final_score,
             "data_stale": 0,
@@ -198,13 +220,15 @@ def run_scan(source: DataSource, session: str) -> dict:
                 INSERT INTO scan_snapshots
                     (symbol, session, scan_ts, price, cum_volume_today, cum_avg_volume,
                      rvol, rvol_score, gap_pct, range_expansion, breakout_level_pct,
-                     breakout_score, breakout_direction, options_score, call_put_ratio,
-                     max_vol_oi_ratio, has_recent_news, alpha_score, data_stale)
+                     breakout_score, breakout_direction, breakout_holding_since,
+                     breakout_hold_minutes, breakout_confirmed, options_score, call_put_ratio,
+                     max_vol_oi_ratio, avg_implied_volatility, has_recent_news, alpha_score, data_stale)
                 VALUES
                     (:symbol, :session, :scan_ts, :price, :cum_volume_today, :cum_avg_volume,
                      :rvol, :rvol_score, :gap_pct, :range_expansion, :breakout_level_pct,
-                     :breakout_score, :breakout_direction, :options_score, :call_put_ratio,
-                     :max_vol_oi_ratio, :has_recent_news, :alpha_score, :data_stale)
+                     :breakout_score, :breakout_direction, :breakout_holding_since,
+                     :breakout_hold_minutes, :breakout_confirmed, :options_score, :call_put_ratio,
+                     :max_vol_oi_ratio, :avg_implied_volatility, :has_recent_news, :alpha_score, :data_stale)
                 """,
                 row,
             )
@@ -218,8 +242,9 @@ def run_scan(source: DataSource, session: str) -> dict:
                         """
                         INSERT INTO options_activity
                             (symbol, scan_ts, expiration, contract_symbol, option_type,
-                             strike, volume, open_interest, vol_oi_ratio, last_price)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             strike, volume, open_interest, vol_oi_ratio, last_price,
+                             implied_volatility)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             symbol,
@@ -232,6 +257,7 @@ def run_scan(source: DataSource, session: str) -> dict:
                             c["open_interest"],
                             c["vol_oi_ratio"],
                             c["last_price"],
+                            c.get("implied_volatility"),
                         ),
                     )
 

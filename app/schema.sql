@@ -50,9 +50,13 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     breakout_level_pct REAL,
     breakout_score REAL,
     breakout_direction TEXT,
+    breakout_holding_since TEXT,
+    breakout_hold_minutes REAL,
+    breakout_confirmed INTEGER NOT NULL DEFAULT 0,
     options_score REAL,
     call_put_ratio REAL,
     max_vol_oi_ratio REAL,
+    avg_implied_volatility REAL,
     has_recent_news INTEGER NOT NULL DEFAULT 0,
     alpha_score REAL,
     data_stale INTEGER NOT NULL DEFAULT 0
@@ -75,9 +79,13 @@ CREATE TABLE IF NOT EXISTS latest_snapshot (
     breakout_level_pct REAL,
     breakout_score REAL,
     breakout_direction TEXT,
+    breakout_holding_since TEXT,
+    breakout_hold_minutes REAL,
+    breakout_confirmed INTEGER NOT NULL DEFAULT 0,
     options_score REAL,
     call_put_ratio REAL,
     max_vol_oi_ratio REAL,
+    avg_implied_volatility REAL,
     has_recent_news INTEGER NOT NULL DEFAULT 0,
     alpha_score REAL,
     data_stale INTEGER NOT NULL DEFAULT 0,
@@ -95,7 +103,8 @@ CREATE TABLE IF NOT EXISTS options_activity (
     volume REAL,
     open_interest REAL,
     vol_oi_ratio REAL,
-    last_price REAL
+    last_price REAL,
+    implied_volatility REAL
 );
 CREATE INDEX IF NOT EXISTS idx_options_activity_symbol_ts ON options_activity(symbol, scan_ts);
 

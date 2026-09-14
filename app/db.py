@@ -46,11 +46,45 @@ def cursor():
         cur.close()
 
 
+# Columns added to tables after their initial release. schema.sql's
+# CREATE TABLE IF NOT EXISTS is a no-op on a database that already has the
+# table, so anyone with an existing stocks.db needs these added by hand
+# (idempotently) rather than losing their collected history to a rebuild.
+_COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
+    "scan_snapshots": {
+        "breakout_holding_since": "TEXT",
+        "breakout_hold_minutes": "REAL",
+        "breakout_confirmed": "INTEGER NOT NULL DEFAULT 0",
+        "avg_implied_volatility": "REAL",
+    },
+    "latest_snapshot": {
+        "breakout_holding_since": "TEXT",
+        "breakout_hold_minutes": "REAL",
+        "breakout_confirmed": "INTEGER NOT NULL DEFAULT 0",
+        "avg_implied_volatility": "REAL",
+    },
+    "options_activity": {
+        "implied_volatility": "REAL",
+    },
+}
+
+
+def _run_column_migrations() -> None:
+    conn = get_connection()
+    for table, columns in _COLUMN_MIGRATIONS.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, decl in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+    conn.commit()
+
+
 def init_db() -> None:
     conn = get_connection()
     with open(SCHEMA_PATH, "r") as f:
         conn.executescript(f.read())
     conn.commit()
+    _run_column_migrations()
 
 
 def upsert(table: str, key_columns: list[str], row: dict) -> None:

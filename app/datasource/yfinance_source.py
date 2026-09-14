@@ -149,6 +149,7 @@ class YFinanceSource(DataSource):
                 if df is None or df.empty:
                     continue
                 for _, row in df.iterrows():
+                    iv = row.get("impliedVolatility")
                     contracts.append(
                         {
                             "expiration": expiration,
@@ -158,6 +159,7 @@ class YFinanceSource(DataSource):
                             "open_interest": float(row.get("openInterest", 0) or 0),
                             "last_price": float(row.get("lastPrice", 0) or 0),
                             "contract_symbol": row.get("contractSymbol", ""),
+                            "implied_volatility": float(iv) if pd.notna(iv) else None,
                         }
                     )
         return contracts or None

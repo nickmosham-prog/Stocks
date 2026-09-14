@@ -37,6 +37,23 @@ function scoreBar(value) {
   return `<div class="score-bar-wrap"><div class="score-bar"><div class="score-bar-fill" style="width:${pct}%"></div></div><span>${fmtNum(value, 0)}</span></div>`;
 }
 
+function fmtPct(v, digits = 0) {
+  if (v === null || v === undefined) return "&mdash;";
+  return (Number(v) * 100).toFixed(digits) + "%";
+}
+
+// A level that just triggered this cycle is a weaker signal than one that's
+// held for a while - show how long, and a "held" badge once it clears the
+// configured confirmation threshold (config/settings.yaml: hold_confirm_minutes).
+function holdBadge(r) {
+  if (r.breakout_hold_minutes === null || r.breakout_hold_minutes === undefined) return "";
+  const minutes = Math.round(r.breakout_hold_minutes);
+  if (r.breakout_confirmed) {
+    return `<div class="hold-badge confirmed">held ${minutes}m</div>`;
+  }
+  return `<div class="hold-badge">${minutes}m</div>`;
+}
+
 function renderRankings(rows) {
   const tbody = el("rankings-body");
   if (!rows.length) {
@@ -51,7 +68,7 @@ function renderRankings(rows) {
       <td data-label="Price">$${fmtNum(r.price)}</td>
       <td data-label="Gap %" class="${signClass(r.gap_pct)}">${r.gap_pct === null ? "&mdash;" : fmtNum(r.gap_pct) + "%"}</td>
       <td data-label="RVOL">${r.rvol === null ? "&mdash;" : fmtNum(r.rvol) + "x"}</td>
-      <td data-label="Breakout">${scoreBar(r.breakout_score)}</td>
+      <td data-label="Breakout">${scoreBar(r.breakout_score)}${holdBadge(r)}</td>
       <td data-label="Options">${r.options_score === null ? "&mdash;" : scoreBar(r.options_score)}</td>
       <td data-label="News">${r.has_recent_news ? '<span class="news-dot">&#9679;</span>' : ""}</td>
       <td data-label="Alpha Score">${scoreBar(r.alpha_score)}</td>
@@ -67,7 +84,7 @@ function renderRankings(rows) {
 function renderOptions(rows) {
   const tbody = el("options-body");
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty">No unusual options activity detected yet this session.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">No unusual options activity detected yet this session.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows
@@ -81,6 +98,7 @@ function renderOptions(rows) {
       <td data-label="Volume">${fmtVolume(r.volume)}</td>
       <td data-label="Open Interest">${fmtVolume(r.open_interest)}</td>
       <td data-label="Vol/OI">${fmtNum(r.vol_oi_ratio)}x</td>
+      <td data-label="IV">${fmtPct(r.implied_volatility)}</td>
     </tr>`
     )
     .join("");
@@ -129,8 +147,10 @@ async function openDrilldown(symbol) {
         <div class="metric-row"><span>RVOL</span><span>${fmtNum(l.rvol)}x</span></div>
         <div class="metric-row"><span>Cum. Volume Today</span><span>${fmtVolume(l.cum_volume_today)}</span></div>
         <div class="metric-row"><span>Breakout Score</span><span>${fmtNum(l.breakout_score, 0)} (${l.breakout_direction || "n/a"})</span></div>
+        <div class="metric-row"><span>Level holding</span><span>${l.breakout_hold_minutes === null ? "not broken" : Math.round(l.breakout_hold_minutes) + "m" + (l.breakout_confirmed ? " (confirmed)" : "")}</span></div>
         <div class="metric-row"><span>Options Score</span><span>${l.options_score === null ? "n/a" : fmtNum(l.options_score, 0)}</span></div>
         <div class="metric-row"><span>Call/Put Ratio</span><span>${l.call_put_ratio === null ? "n/a" : fmtNum(l.call_put_ratio)}</span></div>
+        <div class="metric-row"><span>Avg Implied Volatility</span><span>${fmtPct(l.avg_implied_volatility)}</span></div>
         <div class="metric-row"><span>Alpha Score</span><span>${fmtNum(l.alpha_score, 0)}</span></div>
         <div class="metric-row"><span>Last scan</span><span>${new Date(l.scan_ts).toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET</span></div>
       </div>
@@ -153,7 +173,7 @@ async function openDrilldown(symbol) {
                 .slice(0, 8)
                 .map(
                   (o) =>
-                    `<div class="metric-row"><span>${o.option_type} $${fmtNum(o.strike)} (${o.expiration})</span><span>${fmtNum(o.vol_oi_ratio)}x</span></div>`
+                    `<div class="metric-row"><span>${o.option_type} $${fmtNum(o.strike)} (${o.expiration})</span><span>${fmtNum(o.vol_oi_ratio)}x vol/OI &middot; ${fmtPct(o.implied_volatility)} IV</span></div>`
                 )
                 .join("")
             : "<div>No unusual contracts flagged.</div>"

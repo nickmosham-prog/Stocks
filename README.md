@@ -14,11 +14,16 @@ session (9:30am-4:00pm ET), it:
 2. Computes **relative volume (RVOL)** - today's volume so far vs. the
    normal volume for this time of day, based on a 20-day history.
 3. Computes a **breakout score** from gap %, range expansion vs. ATR, and
-   breaks above/below the prior day's high/low.
+   breaks above/below the prior day's high/low - and tracks how many
+   minutes a level break has *held* across consecutive scans, marking it
+   "confirmed" once it clears `hold_confirm_minutes` (default 15). A level
+   that just triggered once is a weaker signal than one that's held.
 4. For the most interesting tickers each cycle, pulls **options chain**
    data (volume/open-interest ratio + call/put skew) as a "smart money"
-   proxy, and recent **news headlines** tagged by catalyst type (earnings,
-   FDA, upgrade/downgrade, M&A, etc.).
+   proxy, plus **implied volatility** on those contracts (shown alongside
+   volume so you can see whether options are already "expensive" before
+   considering one), and recent **news headlines** tagged by catalyst type
+   (earnings, FDA, upgrade/downgrade, M&A, etc.).
 5. Combines RVOL + breakout + options into a single ranked **Alpha Score**
    per ticker.
 6. Emails you when a ticker's Alpha Score crosses a threshold (see
@@ -97,12 +102,16 @@ this email are the only two outputs.
 
 - **Top Alpha** - all tracked tickers ranked by Alpha Score.
 - **Pre-Market** / **Intraday** - ranked by session.
-- **Options Flow** - tickers with unusual options volume/open-interest.
+- **Options Flow** - tickers with unusual options volume/open-interest,
+  plus implied volatility (IV) per contract.
 - **News** - recent tagged headlines for enriched tickers.
 
-Click any row to open a drill-down panel with the full score breakdown,
-recent headlines, and flagged option contracts. The dashboard polls for
-new data every 30 seconds.
+The Breakout column shows a small "held Xm" badge once a level break has
+lasted long enough to be marked confirmed (green), or just "Xm" while it's
+still fresh. Click any row to open a drill-down panel with the full score
+breakdown (including hold time and average IV), recent headlines, and
+flagged option contracts. The dashboard polls for new data every 30
+seconds.
 
 ## Known limitations
 
@@ -117,7 +126,12 @@ new data every 30 seconds.
   add one (e.g. via `pandas_market_calendars`).
 - **Options data is a delayed volume/open-interest proxy**, not a real
   options-flow or sweep feed. Many small/mid-caps have no listed options
-  and simply show no options score.
+  and simply show no options score. Implied volatility comes from the same
+  free chain data and can be stale or 0 for illiquid contracts.
+- **Breakout hold tracking resets if a level stops holding, or if you edit
+  `hold_confirm_minutes` mid-session** (existing hold timers aren't
+  retroactively re-evaluated) - but it does survive an app restart, since
+  it's read from the database each cycle, not kept in memory.
 - **News tagging is keyword-based**, not NLP - expect occasional
   mis-tags or missed nuance.
 - **Watchlist is curated, not the whole market.** A genuinely unusual

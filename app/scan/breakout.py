@@ -1,8 +1,13 @@
 """Breakout scoring: blends gap %, range expansion (vs ATR14), and distance
-beyond the prior day's high/low into a single 0-100 score.
+beyond the prior day's high/low into a single 0-100 score. Also tracks
+whether a level break is *holding* across consecutive scan cycles, since a
+single instantaneous trigger is a weaker signal than a level that's stayed
+broken for several minutes.
 """
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from app import db
 from app.config import load_settings
@@ -64,6 +69,8 @@ def compute_breakout(
 
     breakout_score = sum(components) / weight_sum if weight_sum > 0 else None
 
+    level_broken = bool((prior_high and current_price > prior_high) or (prior_low and current_price < prior_low))
+
     direction = None
     if prior_high and current_price > prior_high:
         direction = "bullish"
@@ -78,4 +85,35 @@ def compute_breakout(
         "breakout_level_pct": breakout_level_pct,
         "breakout_score": breakout_score,
         "breakout_direction": direction,
+        "level_broken": level_broken,
     }
+
+
+def update_hold_state(
+    level_broken: bool,
+    direction: str | None,
+    now: datetime,
+    prev_holding_since: str | None,
+    prev_direction: str | None,
+) -> dict:
+    """Tracks how long a level break has held across consecutive scan cycles.
+
+    `prev_holding_since`/`prev_direction` come from the ticker's previous
+    latest_snapshot row (None if this is the first time we've scored it, or
+    it wasn't broken last cycle). Same direction as last cycle -> keep
+    accumulating; direction changed, or the level is no longer broken ->
+    reset. Returns {holding_since, hold_minutes, confirmed} where
+    `confirmed` is computed by the caller against the configured threshold
+    (kept out of this function so it stays a pure "how long has this held"
+    calculation, easy to test independent of settings).
+    """
+    if not level_broken:
+        return {"holding_since": None, "hold_minutes": None}
+
+    if prev_holding_since and prev_direction == direction:
+        holding_since = datetime.fromisoformat(prev_holding_since)
+    else:
+        holding_since = now
+
+    hold_minutes = (now - holding_since).total_seconds() / 60.0
+    return {"holding_since": holding_since.isoformat(), "hold_minutes": hold_minutes}
