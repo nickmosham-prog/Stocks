@@ -1,4 +1,5 @@
 from app import alerts
+from app.config import Settings
 
 
 def _row(symbol="AAPL", alpha_score=90.0, price=150.0, rvol=4.2, gap_pct=6.5, session="regular"):
@@ -44,3 +45,35 @@ def test_process_alerts_noop_when_unconfigured(monkeypatch):
 
     monkeypatch.setattr(alerts, "_send_email", _fail_if_called)
     alerts.process_alerts([_row(alpha_score=99.0)])  # should return quietly, no exception
+
+
+def _fake_configured_settings():
+    return Settings(
+        raw={
+            "alerts": {
+                "enabled": True,
+                "alpha_score_threshold": 80,
+                "cooldown_minutes": 60,
+                "email": {
+                    "smtp_host": "smtp.gmail.com",
+                    "smtp_port": 587,
+                    "from_address": "trader@gmail.com",
+                    "app_password": "abcd efgh ijkl mnop",
+                    "to_address": "trader@gmail.com",
+                },
+            }
+        }
+    )
+
+
+def test_process_alerts_never_fires_on_nan_alpha_score(monkeypatch):
+    # Regression: `nan is None` is False and `nan < threshold` is also
+    # False, so the old `if alpha is None or alpha < threshold: continue`
+    # guard let a NaN score sail straight through as "qualifying".
+    monkeypatch.setattr(alerts, "load_settings", _fake_configured_settings)
+
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError("must never send an alert for a NaN alpha score")
+
+    monkeypatch.setattr(alerts, "_send_email", _fail_if_called)
+    alerts.process_alerts([_row(alpha_score=float("nan"))])

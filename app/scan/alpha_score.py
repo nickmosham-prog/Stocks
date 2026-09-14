@@ -8,6 +8,7 @@ dragged toward zero.
 from __future__ import annotations
 
 from app.config import load_settings
+from app.scan.numeric import clean, is_valid
 
 # Fixed internal blend used only for the cheap first-pass ranking that
 # decides which tickers get the expensive options/news enrichment each
@@ -18,10 +19,12 @@ PRELIM_BREAKOUT_WEIGHT = 0.45
 
 
 def _weighted_average(pairs: list[tuple[float | None, float]]) -> float | None:
-    total_weight = sum(weight for score, weight in pairs if score is not None)
+    # is_valid (not a bare `is not None`) matters here: a stray NaN is
+    # "not None" too, and NaN * weight poisons the whole sum silently.
+    total_weight = sum(weight for score, weight in pairs if is_valid(score))
     if total_weight <= 0:
         return None
-    return sum(score * weight for score, weight in pairs if score is not None) / total_weight
+    return clean(sum(score * weight for score, weight in pairs if is_valid(score)) / total_weight)
 
 
 def preliminary_score(rvol_score: float | None, breakout_score: float | None) -> float | None:

@@ -44,3 +44,17 @@ def test_breakout_handles_missing_atr():
     assert result["range_expansion"] is None
     # score still computable from gap + level components
     assert result["breakout_score"] is not None
+
+
+def test_nan_today_high_low_does_not_poison_breakout_score():
+    # Regression: an all-NaN High/Low session (seen on thin/illiquid names)
+    # used to leave range_expansion as NaN rather than None, and
+    # `if range_expansion is not None:` let it through since NaN is not
+    # None - poisoning the whole breakout_score (and, downstream, the
+    # Alpha Score and email alerts) into NaN instead of a real number.
+    nan = float("nan")
+    result = breakout.compute_breakout(current_price=101.0, today_high=nan, today_low=nan, prior=_prior())
+    assert result["range_expansion"] is None
+    assert result["breakout_score"] is not None
+    import math
+    assert not math.isnan(result["breakout_score"])

@@ -11,6 +11,7 @@ from datetime import datetime
 
 from app import db
 from app.config import load_settings
+from app.scan.numeric import clean
 
 
 def get_prior_day_ohlc(symbol: str) -> dict | None:
@@ -44,17 +45,17 @@ def compute_breakout(
 
     gap_pct = None
     if prior_close:
-        gap_pct = (current_price - prior_close) / prior_close * 100.0
+        gap_pct = clean((current_price - prior_close) / prior_close * 100.0)
 
     range_expansion = None
     if atr14 and atr14 > 0:
-        range_expansion = (today_high - today_low) / atr14
+        range_expansion = clean((today_high - today_low) / atr14)
 
     breakout_level_pct = None
     if prior_high and prior_low:
         above = (current_price - prior_high) / prior_high * 100.0
         below = (prior_low - current_price) / prior_low * 100.0
-        breakout_level_pct = max(above, below, 0.0)
+        breakout_level_pct = clean(max(above, below, 0.0))
 
     components, weight_sum = [], 0.0
     if gap_pct is not None:
@@ -67,7 +68,7 @@ def compute_breakout(
         components.append(weights.get("level", 0.25) * min(breakout_level_pct / level_cap, 1.0) * 100.0)
         weight_sum += weights.get("level", 0.25)
 
-    breakout_score = sum(components) / weight_sum if weight_sum > 0 else None
+    breakout_score = clean(sum(components) / weight_sum) if weight_sum > 0 else None
 
     level_broken = bool((prior_high and current_price > prior_high) or (prior_low and current_price < prior_low))
 

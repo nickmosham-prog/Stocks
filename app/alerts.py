@@ -14,6 +14,7 @@ from email.mime.text import MIMEText
 
 from app import db
 from app.config import load_settings
+from app.scan.numeric import is_valid
 
 log = logging.getLogger(__name__)
 
@@ -107,7 +108,10 @@ def process_alerts(rows: list[dict]) -> None:
     qualifying = []
     for row in rows:
         alpha = row.get("alpha_score")
-        if alpha is None or alpha < threshold:
+        # is_valid, not a bare None-check: `float('nan') is not None` is
+        # True and `nan < threshold` is False, so a NaN score would
+        # otherwise sail straight past this guard and fire an alert.
+        if not is_valid(alpha) or alpha < threshold:
             continue
         last = _last_alert_time(row["symbol"])
         if last is not None and (now - last) < cooldown:

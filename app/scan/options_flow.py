@@ -8,11 +8,12 @@ import math
 import statistics
 
 from app.config import load_settings
+from app.scan.numeric import clean, is_valid
 
 
 def _average_iv(contracts: list[dict]) -> float | None:
-    ivs = [c["implied_volatility"] for c in contracts if c.get("implied_volatility") is not None]
-    return statistics.mean(ivs) if ivs else None
+    ivs = [c["implied_volatility"] for c in contracts if is_valid(c.get("implied_volatility"))]
+    return clean(statistics.mean(ivs)) if ivs else None
 
 
 def compute_options_activity(contracts: list[dict] | None) -> dict:
@@ -59,7 +60,7 @@ def compute_options_activity(contracts: list[dict] | None) -> dict:
         max_vol_oi_ratio = max((c["volume"] / max(c["open_interest"], 1.0) for c in contracts), default=0.0)
 
     skew_component = min(abs(math.log(call_put_ratio)) / skew_cap, 1.0) if call_put_ratio > 0 else 0.0
-    options_score = (
+    options_score = clean(
         weights.get("vol_oi", 0.70) * min(max_vol_oi_ratio / oi_cap, 1.0) * 100.0
         + weights.get("skew", 0.30) * skew_component * 100.0
     )
@@ -71,8 +72,8 @@ def compute_options_activity(contracts: list[dict] | None) -> dict:
 
     return {
         "options_score": options_score,
-        "call_put_ratio": call_put_ratio,
-        "max_vol_oi_ratio": max_vol_oi_ratio,
+        "call_put_ratio": clean(call_put_ratio),
+        "max_vol_oi_ratio": clean(max_vol_oi_ratio),
         "avg_implied_volatility": avg_iv,
         "flagged_contracts": sorted(flagged, key=lambda c: c["vol_oi_ratio"], reverse=True)[:20],
     }

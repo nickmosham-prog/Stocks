@@ -60,8 +60,14 @@ def _score_symbol(symbol: str, bars: pd.DataFrame, session: str, bucket_minutes:
     if session_bars.empty:
         return None
     price = float(session_bars["Close"].dropna().iloc[-1])
-    today_high = float(session_bars["High"].max())
-    today_low = float(session_bars["Low"].min())
+    # .max()/.min() skip NaN individual bars fine, but return NaN outright
+    # if EVERY bar in the session is missing High/Low (seen on thin/illiquid
+    # names) - fall back to the known-good close rather than let a NaN
+    # leak into the breakout math downstream.
+    high_series = session_bars["High"].dropna()
+    low_series = session_bars["Low"].dropna()
+    today_high = float(high_series.max()) if not high_series.empty else price
+    today_low = float(low_series.min()) if not low_series.empty else price
     cum_volume_today = float(session_bars["Volume"].fillna(0).sum())
 
     current_bucket = bucket_index(now_et(), session, bucket_minutes)
