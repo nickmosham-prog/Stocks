@@ -132,7 +132,7 @@ async function openDrilldown(symbol) {
         <div class="metric-row"><span>Options Score</span><span>${l.options_score === null ? "n/a" : fmtNum(l.options_score, 0)}</span></div>
         <div class="metric-row"><span>Call/Put Ratio</span><span>${l.call_put_ratio === null ? "n/a" : fmtNum(l.call_put_ratio)}</span></div>
         <div class="metric-row"><span>Alpha Score</span><span>${fmtNum(l.alpha_score, 0)}</span></div>
-        <div class="metric-row"><span>Last scan</span><span>${new Date(l.scan_ts).toLocaleTimeString()}</span></div>
+        <div class="metric-row"><span>Last scan</span><span>${new Date(l.scan_ts).toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET</span></div>
       </div>
       <div class="drilldown-section">
         <h3>Recent News</h3>
@@ -197,7 +197,8 @@ async function refreshStatus() {
     el("status-text").textContent = s.market_open
       ? `Market open (${s.current_session}) &middot; ${s.tickers_tracked} tickers tracked`
       : `Market closed &middot; ${s.tickers_tracked} tickers tracked`;
-    el("status-time").textContent = new Date(s.server_time_et).toLocaleTimeString() + " ET";
+    el("status-time").textContent =
+      new Date(s.server_time_et).toLocaleTimeString("en-US", { timeZone: "America/New_York" }) + " ET";
   } catch (e) {
     el("status-text").textContent = "status unavailable";
   }
