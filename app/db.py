@@ -56,12 +56,14 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         "breakout_hold_minutes": "REAL",
         "breakout_confirmed": "INTEGER NOT NULL DEFAULT 0",
         "avg_implied_volatility": "REAL",
+        "buy_signal": "INTEGER NOT NULL DEFAULT 0",
     },
     "latest_snapshot": {
         "breakout_holding_since": "TEXT",
         "breakout_hold_minutes": "REAL",
         "breakout_confirmed": "INTEGER NOT NULL DEFAULT 0",
         "avg_implied_volatility": "REAL",
+        "buy_signal": "INTEGER NOT NULL DEFAULT 0",
     },
     "options_activity": {
         "implied_volatility": "REAL",

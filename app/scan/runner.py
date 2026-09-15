@@ -17,7 +17,7 @@ from app.config import load_settings, load_watchlist
 from app.datasource.base import DataSource
 from app.datasource.cache import TTLCache
 from app.market_calendar import bucket_index, now_et
-from app.scan import alpha_score, breakout, news, options_flow, rvol
+from app.scan import alpha_score, breakout, buy_setup, news, options_flow, rvol
 
 log = logging.getLogger(__name__)
 
@@ -219,6 +219,7 @@ def run_scan(source: DataSource, session: str) -> dict:
             "alpha_score": final_score,
             "data_stale": 0,
         }
+        row["buy_signal"] = int(buy_setup.meets_buy_setup_criteria(row, settings))
 
         with db.cursor() as cur:
             cur.execute(
@@ -228,13 +229,15 @@ def run_scan(source: DataSource, session: str) -> dict:
                      rvol, rvol_score, gap_pct, range_expansion, breakout_level_pct,
                      breakout_score, breakout_direction, breakout_holding_since,
                      breakout_hold_minutes, breakout_confirmed, options_score, call_put_ratio,
-                     max_vol_oi_ratio, avg_implied_volatility, has_recent_news, alpha_score, data_stale)
+                     max_vol_oi_ratio, avg_implied_volatility, has_recent_news, alpha_score,
+                     buy_signal, data_stale)
                 VALUES
                     (:symbol, :session, :scan_ts, :price, :cum_volume_today, :cum_avg_volume,
                      :rvol, :rvol_score, :gap_pct, :range_expansion, :breakout_level_pct,
                      :breakout_score, :breakout_direction, :breakout_holding_since,
                      :breakout_hold_minutes, :breakout_confirmed, :options_score, :call_put_ratio,
-                     :max_vol_oi_ratio, :avg_implied_volatility, :has_recent_news, :alpha_score, :data_stale)
+                     :max_vol_oi_ratio, :avg_implied_volatility, :has_recent_news, :alpha_score,
+                     :buy_signal, :data_stale)
                 """,
                 row,
             )

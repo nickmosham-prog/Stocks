@@ -63,8 +63,8 @@ function renderRankings(rows) {
   tbody.innerHTML = rows
     .map(
       (r) => `
-    <tr class="clickable" data-symbol="${r.symbol}">
-      <td data-label="Symbol" class="symbol-cell">${r.symbol}</td>
+    <tr class="clickable${r.buy_signal ? " buy-row" : ""}" data-symbol="${r.symbol}">
+      <td data-label="Symbol" class="symbol-cell">${r.symbol}${r.buy_signal ? '<span class="buy-badge">BUY</span>' : ""}</td>
       <td data-label="Price">$${fmtNum(r.price)}</td>
       <td data-label="Gap %" class="${signClass(r.gap_pct)}">${r.gap_pct === null ? "&mdash;" : fmtNum(r.gap_pct) + "%"}</td>
       <td data-label="RVOL">${r.rvol === null ? "&mdash;" : fmtNum(r.rvol) + "x"}</td>
@@ -139,6 +139,7 @@ async function openDrilldown(symbol) {
   try {
     const data = await fetchJSON(`/api/ticker/${symbol}`);
     const l = data.latest;
+    el("drilldown-symbol").innerHTML = symbol + (l.buy_signal ? '<span class="buy-badge">BUY</span>' : "");
     body.innerHTML = `
       <div class="drilldown-section">
         <h3>Snapshot</h3>

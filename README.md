@@ -128,10 +128,15 @@ this email are the only two outputs.
 
 The Breakout column shows a small "held Xm" badge once a level break has
 lasted long enough to be marked confirmed (green), or just "Xm" while it's
-still fresh. Click any row to open a drill-down panel with the full score
-breakdown (including hold time and average IV), recent headlines, and
-flagged option contracts. The dashboard polls for new data every 30
-seconds.
+still fresh. A ticker meeting the **BUY Setup** criteria (see Email alerts
+above) gets a green "BUY" tag next to its symbol and a green accent on the
+row - computed by the same function that decides whether to send the BUY
+Setup email, so the badge and the email never disagree. This works whether
+or not email is configured; it's controlled by `alerts.buy_setup.enabled`
+in `config/settings.yaml` independently of whether alert emails are set up.
+Click any row to open a drill-down panel with the full score breakdown
+(including hold time and average IV), recent headlines, and flagged option
+contracts. The dashboard polls for new data every 30 seconds.
 
 ## Known limitations
 

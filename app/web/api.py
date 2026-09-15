@@ -20,6 +20,7 @@ SORTABLE_COLUMNS = {
     "gap_pct",
     "cum_volume_today",
     "price",
+    "buy_signal",
 }
 
 

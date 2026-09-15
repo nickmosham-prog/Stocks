@@ -97,6 +97,21 @@ tbody td.empty, li.empty { color: var(--text-dim); padding: 24px 12px; text-alig
 .hold-badge { margin-top: 3px; font-size: 11px; color: var(--text-dim); }
 .hold-badge.confirmed { color: var(--green); font-weight: 600; }
 
+.buy-badge {
+  display: inline-block;
+  background: var(--green);
+  color: #04140c;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+tr.buy-row td:first-child { box-shadow: inset 3px 0 0 var(--green); }
+tr.buy-row.clickable:hover { background: #0f2118; }
+
 .news-list { list-style: none; margin: 0; padding: 0; }
 .news-list li { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
 .news-list .headline { font-weight: 600; }

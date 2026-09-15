@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     avg_implied_volatility REAL,
     has_recent_news INTEGER NOT NULL DEFAULT 0,
     alpha_score REAL,
+    buy_signal INTEGER NOT NULL DEFAULT 0,
     data_stale INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_scan_snapshots_symbol_ts ON scan_snapshots(symbol, scan_ts);
@@ -88,6 +89,7 @@ CREATE TABLE IF NOT EXISTS latest_snapshot (
     avg_implied_volatility REAL,
     has_recent_news INTEGER NOT NULL DEFAULT 0,
     alpha_score REAL,
+    buy_signal INTEGER NOT NULL DEFAULT 0,
     data_stale INTEGER NOT NULL DEFAULT 0,
     enriched INTEGER NOT NULL DEFAULT 0
 );

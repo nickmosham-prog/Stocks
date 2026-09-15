@@ -25,6 +25,7 @@ from email.mime.text import MIMEText
 
 from app import db
 from app.config import load_settings
+from app.scan import buy_setup
 from app.scan.numeric import is_valid
 
 log = logging.getLogger(__name__)
@@ -168,10 +169,6 @@ def _process_tier(
         )
 
 
-def _is_confirmed_bullish_breakout(row: dict) -> bool:
-    return bool(row.get("breakout_confirmed")) and row.get("breakout_direction") == "bullish"
-
-
 def process_alerts(rows: list[dict]) -> None:
     """Given every scored row from a scan cycle, run both alert tiers."""
     settings = load_settings()
@@ -197,16 +194,6 @@ def process_alerts(rows: list[dict]) -> None:
 
     buy_cfg = settings.get("alerts", "buy_setup", default={})
     if buy_cfg.get("enabled", False):
-        require_bullish = buy_cfg.get("require_bullish_direction", True)
-        require_confirmed = buy_cfg.get("require_confirmed_breakout", True)
-
-        def _buy_filter(row: dict) -> bool:
-            if require_confirmed and not row.get("breakout_confirmed"):
-                return False
-            if require_bullish and row.get("breakout_direction") != "bullish":
-                return False
-            return True
-
         _process_tier(
             rows,
             email_cfg,
@@ -214,6 +201,6 @@ def process_alerts(rows: list[dict]) -> None:
             threshold=buy_cfg.get("alpha_score_threshold", 88),
             cooldown=timedelta(minutes=buy_cfg.get("cooldown_minutes", 60)),
             now=now,
-            extra_filter=_buy_filter,
+            extra_filter=lambda row: buy_setup.meets_buy_setup_criteria(row, settings),
             format_fn=_format_buy_setup_email,
         )
