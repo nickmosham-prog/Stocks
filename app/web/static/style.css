@@ -112,6 +112,42 @@ tbody td.empty, li.empty { color: var(--text-dim); padding: 24px 12px; text-alig
 tr.buy-row td:first-child { box-shadow: inset 3px 0 0 var(--green); }
 tr.buy-row.clickable:hover { background: #0f2118; }
 
+.breakdown-badge {
+  display: inline-block;
+  background: var(--red);
+  color: #240705;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+tr.breakdown-row td:first-child { box-shadow: inset 3px 0 0 var(--red); }
+tr.breakdown-row.clickable:hover { background: #24120f; }
+
+.fund-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.fund-badge.pass { background: rgba(51, 193, 122, 0.15); color: var(--green); }
+.fund-badge.fail { background: rgba(229, 84, 78, 0.15); color: var(--red); }
+.fund-badge.unknown { background: #1c2130; color: var(--text-dim); }
+
+.disclaimer {
+  color: var(--text-dim);
+  font-size: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0 0 12px;
+}
+
 .news-list { list-style: none; margin: 0; padding: 0; }
 .news-list li { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
 .news-list .headline { font-weight: 600; }

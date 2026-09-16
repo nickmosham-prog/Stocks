@@ -17,7 +17,16 @@ from app.config import load_settings, load_watchlist
 from app.datasource.base import DataSource
 from app.datasource.cache import TTLCache
 from app.market_calendar import bucket_index, now_et
-from app.scan import alpha_score, breakout, buy_setup, news, options_flow, rvol
+from app.scan import (
+    alpha_score,
+    breakdown_setup,
+    breakout,
+    buy_setup,
+    news,
+    options_flow,
+    options_strategy,
+    rvol,
+)
 
 log = logging.getLogger(__name__)
 
@@ -171,6 +180,8 @@ def run_scan(source: DataSource, session: str) -> dict:
     with db.cursor() as cur:
         cur.execute("SELECT symbol, breakout_direction, breakout_holding_since FROM latest_snapshot")
         prev_state = {row["symbol"]: dict(row) for row in cur.fetchall()}
+        cur.execute("SELECT symbol, fundamentals_status FROM fundamentals")
+        fundamentals_by_symbol = {row["symbol"]: row["fundamentals_status"] for row in cur.fetchall()}
 
     all_rows = []
     for symbol, data in prelim.items():
@@ -219,7 +230,10 @@ def run_scan(source: DataSource, session: str) -> dict:
             "alpha_score": final_score,
             "data_stale": 0,
         }
+        row["fundamentals_status"] = fundamentals_by_symbol.get(symbol, "unknown")
+        row["fundamentals_pass"] = int(row["fundamentals_status"] == "pass")
         row["buy_signal"] = int(buy_setup.meets_buy_setup_criteria(row, settings))
+        row["breakdown_signal"] = int(breakdown_setup.meets_breakdown_setup_criteria(row, settings))
 
         with db.cursor() as cur:
             cur.execute(
@@ -230,14 +244,14 @@ def run_scan(source: DataSource, session: str) -> dict:
                      breakout_score, breakout_direction, breakout_holding_since,
                      breakout_hold_minutes, breakout_confirmed, options_score, call_put_ratio,
                      max_vol_oi_ratio, avg_implied_volatility, has_recent_news, alpha_score,
-                     buy_signal, data_stale)
+                     buy_signal, breakdown_signal, fundamentals_status, fundamentals_pass, data_stale)
                 VALUES
                     (:symbol, :session, :scan_ts, :price, :cum_volume_today, :cum_avg_volume,
                      :rvol, :rvol_score, :gap_pct, :range_expansion, :breakout_level_pct,
                      :breakout_score, :breakout_direction, :breakout_holding_since,
                      :breakout_hold_minutes, :breakout_confirmed, :options_score, :call_put_ratio,
                      :max_vol_oi_ratio, :avg_implied_volatility, :has_recent_news, :alpha_score,
-                     :buy_signal, :data_stale)
+                     :buy_signal, :breakdown_signal, :fundamentals_status, :fundamentals_pass, :data_stale)
                 """,
                 row,
             )
@@ -270,8 +284,52 @@ def run_scan(source: DataSource, session: str) -> dict:
                         ),
                     )
 
+    trade_recs: dict[str, dict] = {}
+    if settings.get("scoring", "options_strategy", "enabled", default=True):
+        for row in all_rows:
+            if not (row["buy_signal"] or row["breakdown_signal"]):
+                continue
+            direction = "bullish" if row["buy_signal"] else "bearish"
+            try:
+                contract = options_strategy.find_recommended_contract(
+                    source, row["symbol"], row["price"], direction, settings
+                )
+            except Exception:
+                log.exception("options trade selection failed for %s", row["symbol"])
+                contract = None
+            if not contract:
+                continue
+            trade_recs[row["symbol"]] = {**contract, "direction": direction}
+            with db.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO options_trade_recommendations
+                        (symbol, scan_ts, direction, option_type, contract_symbol, strike,
+                         expiration, days_to_expiration, price, delta, theta, underlying_price,
+                         open_interest, volume, implied_volatility)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row["symbol"],
+                        scan_ts,
+                        direction,
+                        contract["option_type"],
+                        contract["contract_symbol"],
+                        contract["strike"],
+                        contract["expiration"],
+                        contract["days_to_expiration"],
+                        contract["price"],
+                        contract["delta"],
+                        contract["theta"],
+                        row["price"],
+                        contract.get("open_interest"),
+                        contract.get("volume"),
+                        contract.get("implied_volatility"),
+                    ),
+                )
+
     try:
-        alerts.process_alerts(all_rows)
+        alerts.process_alerts(all_rows, trade_recs)
     except Exception:
         log.exception("alert processing failed")
 

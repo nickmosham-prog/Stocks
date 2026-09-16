@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     has_recent_news INTEGER NOT NULL DEFAULT 0,
     alpha_score REAL,
     buy_signal INTEGER NOT NULL DEFAULT 0,
+    breakdown_signal INTEGER NOT NULL DEFAULT 0,
+    fundamentals_status TEXT,
+    fundamentals_pass INTEGER NOT NULL DEFAULT 0,
     data_stale INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_scan_snapshots_symbol_ts ON scan_snapshots(symbol, scan_ts);
@@ -90,6 +93,9 @@ CREATE TABLE IF NOT EXISTS latest_snapshot (
     has_recent_news INTEGER NOT NULL DEFAULT 0,
     alpha_score REAL,
     buy_signal INTEGER NOT NULL DEFAULT 0,
+    breakdown_signal INTEGER NOT NULL DEFAULT 0,
+    fundamentals_status TEXT,
+    fundamentals_pass INTEGER NOT NULL DEFAULT 0,
     data_stale INTEGER NOT NULL DEFAULT 0,
     enriched INTEGER NOT NULL DEFAULT 0
 );
@@ -109,6 +115,44 @@ CREATE TABLE IF NOT EXISTS options_activity (
     implied_volatility REAL
 );
 CREATE INDEX IF NOT EXISTS idx_options_activity_symbol_ts ON options_activity(symbol, scan_ts);
+
+-- One row per symbol, refreshed at most once a day (fundamentals don't
+-- change intraday) - backs the BUY Setup "real financials" quality gate.
+CREATE TABLE IF NOT EXISTS fundamentals (
+    symbol TEXT PRIMARY KEY,
+    net_income REAL,
+    trailing_eps REAL,
+    trailing_pe REAL,
+    revenue_growth_yoy REAL,
+    is_profitable INTEGER,      -- 0/1, NULL if unknown
+    pe_in_range INTEGER,
+    revenue_growing INTEGER,
+    fundamentals_status TEXT NOT NULL DEFAULT 'unknown'
+        CHECK (fundamentals_status IN ('pass', 'fail', 'unknown')),
+    fetched_at TEXT NOT NULL
+);
+
+-- Recommended option contract per qualifying ticker each scan cycle
+-- (calls on confirmed bullish setups, puts on confirmed bearish ones).
+CREATE TABLE IF NOT EXISTS options_trade_recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    scan_ts TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('bullish', 'bearish')),
+    option_type TEXT NOT NULL CHECK (option_type IN ('call', 'put')),
+    contract_symbol TEXT NOT NULL,
+    strike REAL,
+    expiration TEXT,
+    days_to_expiration INTEGER,
+    price REAL,
+    delta REAL,
+    theta REAL,
+    underlying_price REAL,
+    open_interest REAL,
+    volume REAL,
+    implied_volatility REAL
+);
+CREATE INDEX IF NOT EXISTS idx_options_trade_recs_symbol_ts ON options_trade_recommendations(symbol, scan_ts);
 
 CREATE TABLE IF NOT EXISTS news_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

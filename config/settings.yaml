@@ -18,6 +18,10 @@ schedule:
   intraday_window_start: "09:30"
   intraday_window_end: "16:00"
   eod_refresh_time: "16:30"
+  # Fundamentals (P/E, earnings, revenue growth) barely change intraday, so
+  # they're refreshed once a day, separately from the volume/OHLC refresh
+  # above - kept 30 min later to avoid both jobs hitting the database at once.
+  fundamentals_refresh_time: "17:00"
 
 # Historical lookback used to build the "normal volume for this time of day"
 # baseline that RVOL is measured against.
@@ -71,6 +75,39 @@ scoring:
       vol_oi: 0.70
       skew: 0.30
 
+  # "Real financials, not just narratives" - a quality gate on the BUY
+  # Setup signal below (alerts.buy_setup.require_fundamentals). A ticker
+  # must be profitable, not wildly overvalued, and growing revenue
+  # year-over-year. Missing data counts as "unknown", never as a pass -
+  # see app/scan/fundamentals.py. Does not apply to the bearish
+  # breakdown_setup tier (a bad-fundamentals company is exactly what a
+  # bearish thesis often looks like, not a disqualifier).
+  fundamentals:
+    require_positive_earnings: true
+    require_pe_in_range: true
+    min_pe: 0        # effectively disabled by default (profitability already excludes negative-PE distress)
+    max_pe: 60       # "not wildly overvalued" - raise this for growth-heavy watchlists
+    require_revenue_growth: true
+    refresh_hours: 24   # minimum age before a symbol's fundamentals count as stale
+
+  # Options trade recommendation engine: for a ticker meeting BUY Setup
+  # (call) or breakdown_setup (put) criteria, pick one specific contract
+  # using real Black-Scholes Greeks (app/scan/options_greeks.py). Targets
+  # a standard theta-mitigation convention - 30-45 days to expiration
+  # (avoids the steepest final-2-weeks decay) and a moderately
+  # in-the-money delta (real directional exposure without deep-OTM decay).
+  # This is a heuristic contract selector, not a pricing guarantee.
+  options_strategy:
+    enabled: true
+    dte_min: 30
+    dte_max: 45
+    target_delta_call: 0.65
+    target_delta_put: -0.65
+    delta_band: 0.10          # +/- around target: calls 0.55-0.75, puts -0.75 to -0.55
+    risk_free_rate: 0.045     # approximation only - not precise, this is a heuristic filter
+    min_open_interest: 50
+    min_volume: 10
+
 # Email alerts. Two tiers: a general heads-up when Alpha Score crosses
 # `alpha_score_threshold`, and a stricter "BUY Setup" tier (buy_setup: below)
 # for a stronger combined signal. Both use the same Gmail "App Password"
@@ -92,7 +129,27 @@ alerts:
     alpha_score_threshold: 88
     require_bullish_direction: true
     require_confirmed_breakout: true
+    require_fundamentals: true   # additional gate: see scoring.fundamentals above
     cooldown_minutes: 60
+
+  # Bearish mirror of buy_setup - same technical checks, opposite
+  # direction, no fundamentals gate. Drives the red "BREAKDOWN" badge on
+  # the dashboard and is the trigger for a PUT trade recommendation below.
+  breakdown_setup:
+    enabled: true
+    alpha_score_threshold: 88
+    require_bearish_direction: true
+    require_confirmed_breakout: true
+    cooldown_minutes: 60
+
+  # Third alert tier: emails the exact recommended option contract (see
+  # scoring.options_strategy above) whenever one is found for a ticker
+  # that just qualified for buy_setup or breakdown_setup. Longer cooldown
+  # than the technical tiers since a specific contract pick doesn't change
+  # as fast as a raw score.
+  options_trade:
+    enabled: true
+    cooldown_minutes: 240
 
   email:
     smtp_host: "smtp.gmail.com"

@@ -14,7 +14,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import load_settings, load_watchlist
 from app.datasource.base import DataSource
 from app.market_calendar import is_market_day, is_premarket_window, is_regular_window
-from app.scan import runner, volume_profile
+from app.scan import fundamentals, runner, volume_profile
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,19 @@ def _eod_job(source: DataSource) -> None:
     log.info("EOD refresh complete: %d succeeded, %d failed", succeeded, failed)
 
 
+def _fundamentals_job(source: DataSource) -> None:
+    if not is_market_day():
+        return
+    symbols = load_watchlist()
+    log.info("starting daily fundamentals refresh for %d symbols", len(symbols))
+    succeeded, failed = fundamentals.refresh_all(source, symbols)
+    log.info("fundamentals refresh complete: %d succeeded, %d failed", succeeded, failed)
+    # Not recorded in scan_runs: its run_type CHECK constraint can't safely
+    # gain a new allowed value on an existing user's database via
+    # ALTER TABLE (SQLite has no ADD CONSTRAINT) - logging is enough here,
+    # same as how bootstrap_if_needed already reports without a scan_runs row.
+
+
 def bootstrap_if_needed(source: DataSource) -> None:
     """Runs the EOD refresh synchronously on startup if the historical
     volume profile is missing/stale, so day one works without a manual step."""
@@ -57,6 +70,13 @@ def bootstrap_if_needed(source: DataSource) -> None:
     succeeded, failed = volume_profile.refresh_historical_data(source, symbols)
     log.info("bootstrap complete: %d succeeded, %d failed", succeeded, failed)
 
+    if fundamentals.needs_bootstrap(symbols):
+        log.info("fundamentals missing/stale, bootstrapping now...")
+        f_succeeded, f_failed = fundamentals.refresh_all(source, symbols)
+        log.info("fundamentals bootstrap complete: %d succeeded, %d failed", f_succeeded, f_failed)
+    else:
+        log.info("fundamentals are fresh, skipping startup bootstrap")
+
 
 def create_scheduler(source: DataSource) -> BackgroundScheduler:
     settings = load_settings()
@@ -66,6 +86,8 @@ def create_scheduler(source: DataSource) -> BackgroundScheduler:
     intraday_minutes = settings.get("schedule", "intraday_scan_minutes", default=5)
     eod_time = settings.get("schedule", "eod_refresh_time", default="16:30")
     eod_hour, eod_minute = eod_time.split(":")
+    fundamentals_time = settings.get("schedule", "fundamentals_refresh_time", default="17:00")
+    fundamentals_hour, fundamentals_minute = fundamentals_time.split(":")
 
     scheduler.add_job(
         _premarket_job, IntervalTrigger(minutes=premarket_minutes), args=[source], id="premarket_scan"
@@ -78,5 +100,11 @@ def create_scheduler(source: DataSource) -> BackgroundScheduler:
         CronTrigger(day_of_week="mon-fri", hour=int(eod_hour), minute=int(eod_minute)),
         args=[source],
         id="eod_refresh",
+    )
+    scheduler.add_job(
+        _fundamentals_job,
+        CronTrigger(day_of_week="mon-fri", hour=int(fundamentals_hour), minute=int(fundamentals_minute)),
+        args=[source],
+        id="fundamentals_refresh",
     )
     return scheduler

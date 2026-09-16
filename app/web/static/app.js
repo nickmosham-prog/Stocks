@@ -1,7 +1,7 @@
 const POLL_MS = 30000;
 
 const state = {
-  tab: "all",
+  tab: "signals",
   sort: "alpha_score",
   rows: [],
 };
@@ -54,6 +54,33 @@ function holdBadge(r) {
   return `<div class="hold-badge">${minutes}m</div>`;
 }
 
+// Green "BUY" / red "BREAKDOWN" tag next to a symbol, computed server-side
+// by the same function that decides whether to send the matching email
+// (app/scan/buy_setup.py / app/scan/breakdown_setup.py) - the badge and
+// the email can never disagree.
+function signalBadge(r) {
+  if (r.buy_signal) return '<span class="buy-badge">BUY</span>';
+  if (r.breakdown_signal) return '<span class="breakdown-badge">BREAKDOWN</span>';
+  return "";
+}
+
+function signalRowClass(r) {
+  if (r.buy_signal) return " buy-row";
+  if (r.breakdown_signal) return " breakdown-row";
+  return "";
+}
+
+function fundamentalsBadge(r) {
+  if (r.fundamentals_status === "pass") return '<span class="fund-badge pass">Fund OK</span>';
+  if (r.fundamentals_status === "fail") return '<span class="fund-badge fail">Fund Fail</span>';
+  return '<span class="fund-badge unknown">Fund N/A</span>';
+}
+
+function compactContract(c) {
+  if (!c) return "&mdash;";
+  return `${c.option_type.toUpperCase()} $${fmtNum(c.strike)} exp ${c.expiration} &middot; $${fmtNum(c.price)}`;
+}
+
 function renderRankings(rows) {
   const tbody = el("rankings-body");
   if (!rows.length) {
@@ -63,8 +90,8 @@ function renderRankings(rows) {
   tbody.innerHTML = rows
     .map(
       (r) => `
-    <tr class="clickable${r.buy_signal ? " buy-row" : ""}" data-symbol="${r.symbol}">
-      <td data-label="Symbol" class="symbol-cell">${r.symbol}${r.buy_signal ? '<span class="buy-badge">BUY</span>' : ""}</td>
+    <tr class="clickable${signalRowClass(r)}" data-symbol="${r.symbol}">
+      <td data-label="Symbol" class="symbol-cell">${r.symbol}${signalBadge(r)}</td>
       <td data-label="Price">$${fmtNum(r.price)}</td>
       <td data-label="Gap %" class="${signClass(r.gap_pct)}">${r.gap_pct === null ? "&mdash;" : fmtNum(r.gap_pct) + "%"}</td>
       <td data-label="RVOL">${r.rvol === null ? "&mdash;" : fmtNum(r.rvol) + "x"}</td>
@@ -76,6 +103,60 @@ function renderRankings(rows) {
     )
     .join("");
 
+  tbody.querySelectorAll("tr[data-symbol]").forEach((tr) => {
+    tr.addEventListener("click", () => openDrilldown(tr.dataset.symbol));
+  });
+}
+
+function renderSignals(rows, tradesBySymbol) {
+  const tbody = el("signals-body");
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">No qualifying BUY or BREAKDOWN setups right now. These require a confirmed breakout (held, not just triggered) plus a high Alpha Score - and for BUY, a real-financials quality gate. Check the Top Alpha tab to see everything being tracked.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows
+    .map((r) => {
+      const direction = r.buy_signal ? "Bullish" : "Bearish";
+      const directionClass = r.buy_signal ? "up" : "down";
+      return `
+    <tr class="clickable${signalRowClass(r)}" data-symbol="${r.symbol}">
+      <td data-label="Symbol" class="symbol-cell">${r.symbol}${signalBadge(r)}</td>
+      <td data-label="Direction" class="${directionClass}">${direction}</td>
+      <td data-label="Alpha Score">${scoreBar(r.alpha_score)}</td>
+      <td data-label="Hold Time">${holdBadge(r)}</td>
+      <td data-label="Fundamentals">${r.buy_signal ? fundamentalsBadge(r) : "&mdash;"}</td>
+      <td data-label="Recommended Contract">${compactContract(tradesBySymbol[r.symbol])}</td>
+    </tr>`;
+    })
+    .join("");
+
+  tbody.querySelectorAll("tr[data-symbol]").forEach((tr) => {
+    tr.addEventListener("click", () => openDrilldown(tr.dataset.symbol));
+  });
+}
+
+function renderOptionsTrades(rows) {
+  const tbody = el("trades-body");
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">No recommended contracts yet this session.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows
+    .map(
+      (r) => `
+    <tr class="clickable" data-symbol="${r.symbol}">
+      <td data-label="Symbol">${r.symbol}</td>
+      <td data-label="Direction" class="${r.direction === "bullish" ? "up" : "down"}">${r.direction}</td>
+      <td data-label="Type" class="${r.option_type === "call" ? "up" : "down"}">${r.option_type}</td>
+      <td data-label="Strike">$${fmtNum(r.strike)}</td>
+      <td data-label="Expiration">${r.expiration}</td>
+      <td data-label="DTE">${r.days_to_expiration}d</td>
+      <td data-label="Price">$${fmtNum(r.price)}</td>
+      <td data-label="Delta">${fmtNum(r.delta)}</td>
+      <td data-label="Daily Theta">$${fmtNum(r.theta)}</td>
+    </tr>`
+    )
+    .join("");
   tbody.querySelectorAll("tr[data-symbol]").forEach((tr) => {
     tr.addEventListener("click", () => openDrilldown(tr.dataset.symbol));
   });
@@ -139,7 +220,9 @@ async function openDrilldown(symbol) {
   try {
     const data = await fetchJSON(`/api/ticker/${symbol}`);
     const l = data.latest;
-    el("drilldown-symbol").innerHTML = symbol + (l.buy_signal ? '<span class="buy-badge">BUY</span>' : "");
+    const f = data.fundamentals;
+    const rec = data.trade_recommendation;
+    el("drilldown-symbol").innerHTML = symbol + signalBadge(l);
     body.innerHTML = `
       <div class="drilldown-section">
         <h3>Snapshot</h3>
@@ -155,6 +238,31 @@ async function openDrilldown(symbol) {
         <div class="metric-row"><span>Alpha Score</span><span>${fmtNum(l.alpha_score, 0)}</span></div>
         <div class="metric-row"><span>Last scan</span><span>${new Date(l.scan_ts).toLocaleTimeString("en-US", { timeZone: "America/New_York" })} ET</span></div>
       </div>
+      <div class="drilldown-section">
+        <h3>Fundamentals ${fundamentalsBadge(l)}</h3>
+        ${
+          f
+            ? `
+        <div class="metric-row"><span>Trailing P/E</span><span>${f.trailing_pe === null ? "n/a" : fmtNum(f.trailing_pe)}</span></div>
+        <div class="metric-row"><span>Revenue Growth YoY</span><span>${fmtPct(f.revenue_growth_yoy)}</span></div>
+        <div class="metric-row"><span>Profitable</span><span>${f.is_profitable === null ? "n/a" : f.is_profitable ? "yes" : "no"}</span></div>
+        `
+            : "<div>No fundamentals data yet - refreshed once daily after close.</div>"
+        }
+      </div>
+      ${
+        rec
+          ? `
+      <div class="drilldown-section">
+        <h3>Recommended Contract</h3>
+        <div class="metric-row"><span>${rec.option_type.toUpperCase()} $${fmtNum(rec.strike)}</span><span>exp ${rec.expiration} (${rec.days_to_expiration}d)</span></div>
+        <div class="metric-row"><span>Price</span><span>$${fmtNum(rec.price)}</span></div>
+        <div class="metric-row"><span>Delta</span><span>${fmtNum(rec.delta)}</span></div>
+        <div class="metric-row"><span>Est. Daily Theta</span><span>$${fmtNum(rec.theta)}</span></div>
+      </div>
+      `
+          : ""
+      }
       <div class="drilldown-section">
         <h3>Recent News</h3>
         ${
@@ -193,8 +301,10 @@ el("drilldown-close").addEventListener("click", () => {
 function setActiveTab(tab) {
   state.tab = tab;
   document.querySelectorAll(".tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
-  el("table-view").hidden = tab === "options" || tab === "news";
+  el("signals-view").hidden = tab !== "signals";
+  el("table-view").hidden = !["all", "premarket", "regular"].includes(tab);
   el("options-view").hidden = tab !== "options";
+  el("trades-view").hidden = tab !== "trades";
   el("news-view").hidden = tab !== "news";
   refresh();
 }
@@ -226,9 +336,20 @@ async function refreshStatus() {
 }
 
 async function refresh() {
-  if (state.tab === "options") {
+  if (state.tab === "signals") {
+    const [rankings, trades] = await Promise.all([
+      fetchJSON("/api/rankings?session=all&only_signals=true&sort=alpha_score&limit=100"),
+      fetchJSON("/api/options-trades?limit=100"),
+    ]);
+    const tradesBySymbol = {};
+    trades.rows.forEach((t) => (tradesBySymbol[t.symbol] = t));
+    renderSignals(rankings.rows, tradesBySymbol);
+  } else if (state.tab === "options") {
     const data = await fetchJSON("/api/options?limit=50");
     renderOptions(data.rows);
+  } else if (state.tab === "trades") {
+    const data = await fetchJSON("/api/options-trades?limit=100");
+    renderOptionsTrades(data.rows);
   } else if (state.tab === "news") {
     const data = await fetchJSON("/api/news?limit=50");
     renderNews(data.rows);

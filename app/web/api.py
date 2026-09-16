@@ -33,11 +33,17 @@ def get_rankings(
     session: str = Query("all", pattern="^(all|premarket|regular)$"),
     sort: str = Query("alpha_score"),
     limit: int = Query(100, ge=1, le=500),
+    only_signals: bool = Query(False),
 ):
     if sort not in SORTABLE_COLUMNS:
         sort = "alpha_score"
-    where = "" if session == "all" else "WHERE session = ?"
-    params: tuple = () if session == "all" else (session,)
+    clauses, params = [], []
+    if session != "all":
+        clauses.append("session = ?")
+        params.append(session)
+    if only_signals:
+        clauses.append("(buy_signal = 1 OR breakdown_signal = 1)")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     with db.cursor() as cur:
         cur.execute(
             f"""
@@ -83,8 +89,22 @@ def get_ticker(symbol: str):
         )
         options_rows = cur.fetchall()
 
+        cur.execute("SELECT * FROM fundamentals WHERE symbol = ?", (symbol,))
+        fundamentals_row = cur.fetchone()
+
+        cur.execute(
+            """
+            SELECT * FROM options_trade_recommendations
+            WHERE symbol = ? AND scan_ts = (SELECT MAX(scan_ts) FROM options_trade_recommendations WHERE symbol = ?)
+            """,
+            (symbol, symbol),
+        )
+        trade_rec_row = cur.fetchone()
+
     return {
         "latest": dict(latest),
+        "fundamentals": dict(fundamentals_row) if fundamentals_row else None,
+        "trade_recommendation": dict(trade_rec_row) if trade_rec_row else None,
         "history": _rows_to_dicts(history),
         "news": _rows_to_dicts(news_rows),
         "options": _rows_to_dicts(options_rows),
@@ -136,6 +156,27 @@ def get_options(symbol: str):
             ORDER BY vol_oi_ratio DESC
             """,
             (symbol, symbol),
+        )
+        rows = cur.fetchall()
+    return {"rows": _rows_to_dicts(rows)}
+
+
+@router.get("/options-trades")
+def get_options_trades(limit: int = Query(50, ge=1, le=200)):
+    """Latest recommended option contract per symbol (see
+    app/scan/options_strategy.py) - a specific strike/expiration/price
+    pick, not the broader unusual-activity view /api/options shows."""
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT otr.* FROM options_trade_recommendations otr
+            INNER JOIN (
+                SELECT symbol, MAX(scan_ts) AS max_ts FROM options_trade_recommendations GROUP BY symbol
+            ) latest ON otr.symbol = latest.symbol AND otr.scan_ts = latest.max_ts
+            ORDER BY otr.scan_ts DESC
+            LIMIT ?
+            """,
+            (limit,),
         )
         rows = cur.fetchall()
     return {"rows": _rows_to_dicts(rows)}

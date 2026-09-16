@@ -8,16 +8,18 @@ def _settings(**buy_overrides):
         "alpha_score_threshold": 88,
         "require_bullish_direction": True,
         "require_confirmed_breakout": True,
+        "require_fundamentals": True,
         **buy_overrides,
     }
     return Settings(raw={"alerts": {"buy_setup": buy_cfg}})
 
 
-def _row(alpha_score=95.0, breakout_confirmed=1, breakout_direction="bullish"):
+def _row(alpha_score=95.0, breakout_confirmed=1, breakout_direction="bullish", fundamentals_status="pass"):
     return {
         "alpha_score": alpha_score,
         "breakout_confirmed": breakout_confirmed,
         "breakout_direction": breakout_direction,
+        "fundamentals_status": fundamentals_status,
     }
 
 
@@ -53,3 +55,17 @@ def test_confirmed_requirement_can_be_relaxed_via_settings():
 def test_bullish_requirement_can_be_relaxed_via_settings():
     row = _row(breakout_direction="bearish")
     assert meets_buy_setup_criteria(row, _settings(require_bullish_direction=False)) is True
+
+
+def test_fails_when_fundamentals_status_is_fail():
+    assert meets_buy_setup_criteria(_row(fundamentals_status="fail"), _settings()) is False
+
+
+def test_fails_when_fundamentals_status_is_unknown():
+    # Fail-closed: missing/unverifiable fundamentals never earn a BUY badge.
+    assert meets_buy_setup_criteria(_row(fundamentals_status="unknown"), _settings()) is False
+
+
+def test_fundamentals_requirement_can_be_relaxed_via_settings():
+    row = _row(fundamentals_status="fail")
+    assert meets_buy_setup_criteria(row, _settings(require_fundamentals=False)) is True

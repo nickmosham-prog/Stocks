@@ -133,15 +133,26 @@ class YFinanceSource(DataSource):
             )
         return items
 
-    def get_option_chain(self, symbol: str) -> list[dict] | None:
+    def get_option_expirations(self, symbol: str) -> list[str] | None:
         ticker = yf.Ticker(symbol)
         expirations = _with_retry(lambda: ticker.options)
-        if not expirations:
+        return list(expirations) if expirations else None
+
+    def get_option_chain(self, symbol: str, expirations: list[str] | None = None) -> list[dict] | None:
+        ticker = yf.Ticker(symbol)
+        if expirations is None:
+            all_expirations = _with_retry(lambda: ticker.options)
+            if not all_expirations:
+                return None
+            # Only the nearest 2 expirations by default - keeps this cheap
+            # and focused on near-term "smart money" positioning rather
+            # than far-dated LEAPS.
+            expirations = all_expirations[:2]
+        elif not expirations:
             return None
+
         contracts = []
-        # Only the nearest 2 expirations - keeps this cheap and focused on
-        # near-term "smart money" positioning rather than far-dated LEAPS.
-        for expiration in expirations[:2]:
+        for expiration in expirations:
             chain = _with_retry(ticker.option_chain, expiration)
             if chain is None:
                 continue
@@ -150,6 +161,8 @@ class YFinanceSource(DataSource):
                     continue
                 for _, row in df.iterrows():
                     iv = row.get("impliedVolatility")
+                    bid = row.get("bid")
+                    ask = row.get("ask")
                     contracts.append(
                         {
                             "expiration": expiration,
@@ -158,11 +171,44 @@ class YFinanceSource(DataSource):
                             "volume": float(row.get("volume", 0) or 0),
                             "open_interest": float(row.get("openInterest", 0) or 0),
                             "last_price": float(row.get("lastPrice", 0) or 0),
+                            "bid": float(bid) if pd.notna(bid) and bid else None,
+                            "ask": float(ask) if pd.notna(ask) and ask else None,
                             "contract_symbol": row.get("contractSymbol", ""),
                             "implied_volatility": float(iv) if pd.notna(iv) else None,
                         }
                     )
         return contracts or None
+
+    def get_fundamentals(self, symbol: str) -> dict | None:
+        ticker = yf.Ticker(symbol)
+        info = _with_retry(lambda: ticker.info)
+        if not info:
+            return None
+        revenue_growth = info.get("revenueGrowth")
+        if revenue_growth is None:
+            revenue_growth = self._revenue_growth_from_quarterly(ticker)
+        return {
+            "net_income": info.get("netIncomeToCommon"),
+            "trailing_eps": info.get("trailingEps"),
+            "trailing_pe": info.get("trailingPE"),
+            "revenue_growth_yoy": revenue_growth,
+        }
+
+    def _revenue_growth_from_quarterly(self, ticker) -> float | None:
+        df = _with_retry(lambda: ticker.quarterly_income_stmt)
+        try:
+            if df is None or df.empty or "Total Revenue" not in df.index:
+                return None
+            revenues = df.loc["Total Revenue"].dropna()
+            if len(revenues) < 5:  # need same-quarter-last-year, 4 back
+                return None
+            latest, year_ago = revenues.iloc[0], revenues.iloc[4]
+            if not year_ago:
+                return None
+            return (latest - year_ago) / abs(year_ago)
+        except Exception:
+            log.warning("could not compute quarterly revenue growth for %s", ticker.ticker)
+            return None
 
 
 def _normalize_published(value) -> str | None:

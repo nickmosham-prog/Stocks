@@ -21,15 +21,35 @@
   </header>
 
   <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="all">Top Alpha</button>
+    <button class="tab active" data-tab="signals">Buy Signals</button>
+    <button class="tab" data-tab="all">Top Alpha</button>
     <button class="tab" data-tab="premarket">Pre-Market</button>
     <button class="tab" data-tab="regular">Intraday</button>
     <button class="tab" data-tab="options">Options Flow</button>
+    <button class="tab" data-tab="trades">Options Trades</button>
     <button class="tab" data-tab="news">News</button>
   </nav>
 
   <main>
-    <section id="table-view">
+    <section id="signals-view">
+      <table id="signals-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Direction</th>
+            <th data-sort="alpha_score">Alpha Score</th>
+            <th>Hold Time</th>
+            <th>Fundamentals</th>
+            <th>Recommended Contract</th>
+          </tr>
+        </thead>
+        <tbody id="signals-body">
+          <tr><td colspan="6" class="empty">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="table-view" hidden>
       <table id="rankings-table">
         <thead>
           <tr>
@@ -45,6 +65,33 @@
         </thead>
         <tbody id="rankings-body">
           <tr><td colspan="8" class="empty">Loading...</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="trades-view" hidden>
+      <p class="disclaimer">
+        Heuristic contract selection using a simplified Black-Scholes pricing model
+        (constant volatility, no dividends, approximate risk-free rate). Not a
+        guarantee of theta behavior or profitability, and not a trade instruction &mdash;
+        verify pricing and Greeks with your broker before acting.
+      </p>
+      <table id="trades-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Direction</th>
+            <th>Type</th>
+            <th>Strike</th>
+            <th>Expiration</th>
+            <th>DTE</th>
+            <th>Price</th>
+            <th>Delta</th>
+            <th>Daily Theta</th>
+          </tr>
+        </thead>
+        <tbody id="trades-body">
+          <tr><td colspan="9" class="empty">No recommended contracts yet this session.</td></tr>
         </tbody>
       </table>
     </section>
