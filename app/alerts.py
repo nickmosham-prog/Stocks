@@ -1,5 +1,6 @@
-"""Email alerts. Four tiers, all configured under `alerts` in
-config/settings.yaml:
+"""Email alerts. Four per-scan tiers, all configured under `alerts` in
+config/settings.yaml, plus the scheduled Top Picks digest (`picks` in
+config/settings.yaml, see send_picks_digest below):
 
 - **general**: fires when a ticker's Alpha Score crosses `alpha_score_threshold`.
 - **buy_setup**: a stricter tier - Alpha Score clears a higher bar AND the
@@ -27,6 +28,7 @@ from __future__ import annotations
 import logging
 import smtplib
 from datetime import datetime, timedelta, timezone
+from email.header import Header
 from email.mime.text import MIMEText
 
 from app import db
@@ -84,14 +86,28 @@ def _format_table(qualifying: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _format_email(qualifying: list[dict]) -> tuple[str, str]:
-    if len(qualifying) == 1:
-        subject = f"Stock alert: {qualifying[0]['symbol']} Alpha Score {qualifying[0]['alpha_score']:.0f}"
-    else:
-        symbols = ", ".join(r["symbol"] for r in qualifying)
-        subject = f"Stock alert: {len(qualifying)} tickers above threshold ({symbols})"
+def _direction_label(row: dict) -> str:
+    gap = row.get("gap_pct")
+    if not is_valid(gap):
+        return row["symbol"]
+    return f"{row['symbol']} {'UP' if gap >= 0 else 'DOWN'} {abs(gap):.1f}%"
 
-    body = _format_table(qualifying)
+
+def _format_email(qualifying: list[dict]) -> tuple[str, str]:
+    # Direction goes in the subject: the Alpha Score rewards big moves either
+    # way, so a crash can score as high as a rally - this must never read
+    # like a buy signal.
+    if len(qualifying) == 1:
+        subject = f"Unusual activity: {_direction_label(qualifying[0])} (Alpha {qualifying[0]['alpha_score']:.0f})"
+    else:
+        labels = ", ".join(_direction_label(r) for r in qualifying)
+        subject = f"Unusual activity: {len(qualifying)} tickers ({labels})"
+
+    body = (
+        "Heads-up only: unusual volume/price activity, in EITHER direction.\n"
+        "This is not a buy signal - see the Top Picks email/tab for buy ideas.\n\n"
+    )
+    body += _format_table(qualifying)
     body += "\n\nFree/delayed data via Yahoo Finance. Not financial advice."
     return subject, body
 
@@ -179,8 +195,10 @@ def _format_options_trade_email(qualifying: list[dict], trade_recs: dict[str, di
 
 
 def _send_email(email_cfg: dict, subject: str, body: str) -> bool:
-    msg = MIMEText(body)
-    msg["Subject"] = subject
+    # Explicit UTF-8 for body and subject: smtplib encodes a plain str
+    # message as ASCII and would crash on any non-ASCII character.
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(subject, "utf-8")
     msg["From"] = email_cfg["from_address"]
     msg["To"] = email_cfg["to_address"]
     try:
@@ -298,3 +316,130 @@ def process_alerts(rows: list[dict], trade_recs: dict[str, dict] | None = None) 
             extra_filter=lambda row: row["symbol"] in trade_recs,
             format_fn=lambda qualifying: _format_options_trade_email(qualifying, trade_recs),
         )
+
+
+# --- Top Picks digest -------------------------------------------------------
+
+DIGEST_KIND = "picks_digest"
+DIGEST_MAX_SCAN_AGE_MINUTES = 20
+
+
+def _fmt_money(value) -> str:
+    return f"${value:,.2f}" if is_valid(value) else "n/a"
+
+
+def _format_pick(pick: dict) -> str:
+    lines = [
+        f"#{pick['rank']} {pick['symbol']}  {_fmt_money(pick.get('price'))}   "
+        f"Pick Score {pick['pick_score']:.0f}/100"
+    ]
+    reasons = [r for r in (pick.get("reasons") or "").split("\n") if r]
+    risks = [r for r in (pick.get("risks") or "").split("\n") if r]
+    if reasons:
+        lines.append("  Why:")
+        lines.extend(f"   - {r}" for r in reasons)
+    if risks:
+        lines.append("  Risks:")
+        lines.extend(f"   - {r}" for r in risks)
+
+    if pick.get("contract_symbol") and is_valid(pick.get("strike")) and is_valid(pick.get("option_price")):
+        per_contract = pick["option_price"] * 100
+        lines.append(
+            f"  Option idea: CALL ${pick['strike']:g} expiring {pick['expiration']} "
+            f"({pick['days_to_expiration']} days), about {_fmt_money(pick['option_price'])}/share "
+            f"(~${per_contract:,.0f} per contract)"
+        )
+        detail = []
+        if is_valid(pick.get("delta")):
+            detail.append(f"delta {pick['delta']:.2f}")
+        if is_valid(pick.get("theta")):
+            detail.append(f"time decay ~{_fmt_money(abs(pick['theta']))}/share per day")
+        if is_valid(pick.get("breakeven")):
+            move = pick.get("breakeven_move_pct")
+            move_text = f" ({move:+.1f}% from here)" if is_valid(move) else ""
+            detail.append(f"breakeven {_fmt_money(pick['breakeven'])} at expiration{move_text}")
+        if detail:
+            lines.append("     " + ", ".join(detail))
+        lines.append(f"     contract: {pick['contract_symbol']}")
+    else:
+        lines.append("  Option idea: none - no liquid 30-45 day call near 0.65 delta; stock-only idea")
+    return "\n".join(lines)
+
+
+def _format_picks_digest(slot_label: str, picks: list[dict], run: dict | None) -> tuple[str, str]:
+    footer = (
+        "\n\nHow picks are chosen: each one passed the fundamentals check (profitable,\n"
+        "reasonable P/E, growing revenue), is above its 50-day average, and is up\n"
+        "today; they are ranked by trend, momentum, business quality, analyst\n"
+        "targets and options activity. Swing-trade horizon: days to weeks.\n\n"
+        "Screening ideas, not trade instructions. Option prices/Greeks come from\n"
+        "free delayed data and a simplified Black-Scholes model - check live\n"
+        "quotes with your broker, size positions so a total loss of the premium\n"
+        "is acceptable, and decide your exit before you enter.\n"
+        "Free/delayed data via Yahoo Finance. Not financial advice."
+    )
+    if run is None:
+        subject = f"Top Picks {slot_label} ET: no fresh scan data"
+        body = (
+            f"No scan has completed in the last {DIGEST_MAX_SCAN_AGE_MINUTES} minutes, so there are\n"
+            "no current picks. The app is running, but scans may be failing (e.g. Yahoo\n"
+            "Finance rate-limiting). Check logs/stocks.log on your Mac."
+        )
+        return subject, body + footer
+
+    scan_time = datetime.fromisoformat(run["scan_ts"]).strftime("%H:%M")
+    if not picks:
+        subject = f"Top Picks {slot_label} ET: no stock cleared the bar"
+        body = (
+            f"No stock cleared the Top Picks bar at the {scan_time} ET scan "
+            f"({run.get('candidates') or 0} passed the basic\n"
+            "filters, none scored high enough). That usually means a weak or choppy\n"
+            "tape - sitting out is a valid position. The dashboard keeps updating\n"
+            "every 5 minutes."
+        )
+        return subject, body + footer
+
+    subject = f"Top Picks {slot_label} ET: " + ", ".join(p["symbol"] for p in picks)
+    body = f"Top Picks as of the {scan_time} ET scan - ranked bullish swing ideas.\n\n"
+    body += "\n\n".join(_format_pick(p) for p in picks)
+    return subject, body + footer
+
+
+def _latest_pick_run(now: datetime) -> tuple[dict | None, list[dict]]:
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM pick_runs ORDER BY scan_ts DESC LIMIT 1")
+        run = cur.fetchone()
+        if run is None:
+            return None, []
+        run = dict(run)
+        age = now - datetime.fromisoformat(run["scan_ts"])
+        if age > timedelta(minutes=DIGEST_MAX_SCAN_AGE_MINUTES):
+            return None, []
+        cur.execute("SELECT * FROM top_picks WHERE scan_ts = ? ORDER BY rank", (run["scan_ts"],))
+        return run, [dict(r) for r in cur.fetchall()]
+
+
+def send_picks_digest(slot_label: str, now: datetime | None = None) -> bool:
+    """Emails the latest Top Picks. Always sends something (even "no
+    picks") so a quiet inbox never leaves the user wondering whether the
+    system is working. At most once per slot per day. Returns True if sent."""
+    settings = load_settings()
+    if not settings.get("alerts", "enabled", default=False) or not settings.get("picks", "enabled", default=True):
+        return False
+    email_cfg = settings.get("alerts", "email", default={})
+    if not _is_configured(email_cfg):
+        return False
+
+    now = now or datetime.now(tz=timezone.utc)
+    slot_key = f"DIGEST-{slot_label}"
+    last = _last_alert_time(slot_key, DIGEST_KIND)
+    if last is not None and (now - last) < timedelta(hours=12):
+        return False
+
+    run, picks = _latest_pick_run(now)
+    subject, body = _format_picks_digest(slot_label, picks, run)
+    if not _send_email(email_cfg, subject, body):
+        return False
+    _record_alert(slot_key, None, now, DIGEST_KIND)
+    log.info("sent Top Picks digest (%s): %d pick(s)", slot_label, len(picks))
+    return True

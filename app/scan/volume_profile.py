@@ -15,7 +15,13 @@ import pandas as pd
 from app import db
 from app.config import load_settings
 from app.datasource.base import DataSource
-from app.market_calendar import bucket_index, is_premarket_window, is_regular_window
+from app.market_calendar import (
+    bucket_index,
+    is_premarket_window,
+    is_regular_window,
+    now_et,
+    session_window,
+)
 
 log = logging.getLogger(__name__)
 
@@ -102,12 +108,27 @@ def build_daily_ohlc_rows(df: pd.DataFrame, symbol: str) -> list[dict]:
     return rows
 
 
-def _fetch_symbol_data(source: DataSource, symbol: str, lookback_days: int, bucket_minutes: int):
+def _drop_unfinished_today(rows: list[dict]) -> list[dict]:
+    """Before the regular-session close, today's daily bar is still forming.
+    Storing it would make breakout.get_prior_day_ohlc() treat *today* as
+    "yesterday" and skew the trend metrics, so keep it out until the close
+    (the 16:30 EOD refresh then stores the finished bar)."""
+    now = now_et()
+    _, close_time = session_window("regular")
+    if now.time() >= close_time:
+        return rows
+    today = now.strftime("%Y-%m-%d")
+    return [row for row in rows if row["trade_date"] != today]
+
+
+def _fetch_symbol_data(
+    source: DataSource, symbol: str, lookback_days: int, bucket_minutes: int, history_days: int
+):
     profile_df = source.get_profile_history(symbol, days=lookback_days, interval=f"{bucket_minutes}m")
-    daily_df = source.get_daily_history(symbol, days=30)
+    daily_df = source.get_daily_history(symbol, days=history_days)
     profile_rows = build_profile_rows(profile_df, symbol, bucket_minutes) if profile_df is not None else []
     daily_rows = build_daily_ohlc_rows(daily_df, symbol) if daily_df is not None else []
-    return symbol, profile_rows, daily_rows
+    return symbol, profile_rows, _drop_unfinished_today(daily_rows)
 
 
 def refresh_historical_data(source: DataSource, symbols: list[str]) -> tuple[int, int]:
@@ -119,11 +140,12 @@ def refresh_historical_data(source: DataSource, symbols: list[str]) -> tuple[int
     lookback_days = settings.get("volume_profile", "lookback_days", default=20)
     bucket_minutes = settings.get("volume_profile", "bucket_minutes", default=5)
     max_workers = settings.get("enrichment", "max_workers", default=5)
+    history_days = settings.get("picks", "daily_history_days", default=400)
 
     succeeded, failed = 0, 0
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
-            pool.submit(_fetch_symbol_data, source, symbol, lookback_days, bucket_minutes): symbol
+            pool.submit(_fetch_symbol_data, source, symbol, lookback_days, bucket_minutes, history_days): symbol
             for symbol in symbols
         }
         for future in as_completed(futures):
@@ -167,3 +189,19 @@ def needs_bootstrap(symbols: list[str]) -> bool:
         return False
     fresh = sum(1 for symbol in symbols if has_fresh_profile(symbol))
     return fresh < len(symbols) / 2
+
+
+MIN_TREND_HISTORY_ROWS = 200
+
+
+def daily_history_is_short(symbols: list[str]) -> bool:
+    """True if the typical symbol has fewer daily bars than the 200-day
+    average needs - e.g. an install from before Top Picks, which only kept
+    30 days of daily_ohlc. Triggers a one-time startup refresh."""
+    if not symbols:
+        return False
+    with db.cursor() as cur:
+        cur.execute("SELECT symbol, COUNT(*) AS n FROM daily_ohlc GROUP BY symbol")
+        counts = {row["symbol"]: row["n"] for row in cur.fetchall()}
+    per_symbol = sorted(counts.get(symbol, 0) for symbol in symbols)
+    return per_symbol[len(per_symbol) // 2] < MIN_TREND_HISTORY_ROWS

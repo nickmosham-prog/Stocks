@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import yfinance as yf
@@ -40,6 +40,17 @@ def _with_retry(fn, *args, **kwargs):
             if attempt < max_retries - 1:
                 time.sleep(backoff * (2**attempt))
     log.warning("data fetch failed after %d attempts: %s", max_retries, last_exc)
+    return None
+
+
+def _earnings_date(info: dict) -> str | None:
+    """Next earnings date (YYYY-MM-DD) from Ticker.info's epoch-seconds
+    fields, or None. Past dates are kept as-is - callers compare against
+    today themselves."""
+    for key in ("earningsTimestampStart", "earningsTimestamp"):
+        value = info.get(key)
+        if isinstance(value, (int, float)) and value > 0:
+            return datetime.fromtimestamp(value, tz=timezone.utc).strftime("%Y-%m-%d")
     return None
 
 
@@ -93,7 +104,11 @@ class YFinanceSource(DataSource):
 
     def get_daily_history(self, symbol: str, days: int) -> pd.DataFrame | None:
         ticker = yf.Ticker(symbol)
-        df = _with_retry(ticker.history, period=f"{days}d", interval="1d", auto_adjust=False)
+        # An explicit start date rather than period=f"{days}d": yfinance only
+        # reliably accepts its fixed period strings (1mo, 1y, ...), and the
+        # trend metrics need an arbitrary ~400-day window.
+        start = (datetime.now(tz=timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        df = _with_retry(ticker.history, start=start, interval="1d", auto_adjust=False)
         if df is None or df.empty:
             return None
         return df
@@ -192,6 +207,11 @@ class YFinanceSource(DataSource):
             "trailing_eps": info.get("trailingEps"),
             "trailing_pe": info.get("trailingPE"),
             "revenue_growth_yoy": revenue_growth,
+            "profit_margin": info.get("profitMargins"),
+            "target_mean_price": info.get("targetMeanPrice"),
+            "recommendation_mean": info.get("recommendationMean"),
+            "analyst_count": info.get("numberOfAnalystOpinions"),
+            "next_earnings_date": _earnings_date(info),
         }
 
     def _revenue_growth_from_quarterly(self, ticker) -> float | None:

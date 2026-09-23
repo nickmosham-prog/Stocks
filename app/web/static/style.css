@@ -148,6 +148,31 @@ tr.breakdown-row.clickable:hover { background: #24120f; }
   margin: 0 0 12px;
 }
 
+.picks-list { display: flex; flex-direction: column; gap: 12px; }
+.picks-list .empty { color: var(--text-dim); padding: 24px 12px; text-align: center; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
+.picks-updated { color: var(--text-dim); font-size: 12px; }
+.pick-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: 8px;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+.pick-card:hover { background: #151b26; }
+.pick-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.pick-rank { color: var(--text-dim); font-weight: 600; }
+.pick-symbol { font-size: 18px; font-weight: 700; }
+.pick-price { color: var(--text-dim); }
+.pick-score { margin-left: auto; min-width: 140px; }
+.pick-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--green); margin-top: 6px; }
+.pick-label.risk { color: var(--amber); }
+.pick-reasons, .pick-risks { margin: 4px 0 6px; padding-left: 18px; line-height: 1.5; }
+.pick-risks { color: var(--text-dim); }
+.pick-option { margin-top: 8px; padding: 8px 10px; background: #0f1a14; border: 1px solid #1d3a2a; border-radius: 6px; }
+.pick-option.none { background: none; border-style: dashed; color: var(--text-dim); }
+.pick-option-detail { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+
 .news-list { list-style: none; margin: 0; padding: 0; }
 .news-list li { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
 .news-list .headline { font-weight: 600; }

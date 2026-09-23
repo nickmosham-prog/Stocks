@@ -21,6 +21,7 @@ SORTABLE_COLUMNS = {
     "cum_volume_today",
     "price",
     "buy_signal",
+    "pick_score",
 }
 
 
@@ -92,6 +93,9 @@ def get_ticker(symbol: str):
         cur.execute("SELECT * FROM fundamentals WHERE symbol = ?", (symbol,))
         fundamentals_row = cur.fetchone()
 
+        cur.execute("SELECT * FROM trend_metrics WHERE symbol = ?", (symbol,))
+        trend_row = cur.fetchone()
+
         cur.execute(
             """
             SELECT * FROM options_trade_recommendations
@@ -104,6 +108,7 @@ def get_ticker(symbol: str):
     return {
         "latest": dict(latest),
         "fundamentals": dict(fundamentals_row) if fundamentals_row else None,
+        "trend": dict(trend_row) if trend_row else None,
         "trade_recommendation": dict(trade_rec_row) if trade_rec_row else None,
         "history": _rows_to_dicts(history),
         "news": _rows_to_dicts(news_rows),
@@ -159,6 +164,21 @@ def get_options(symbol: str):
         )
         rows = cur.fetchall()
     return {"rows": _rows_to_dicts(rows)}
+
+
+@router.get("/picks")
+def get_picks():
+    """Top Picks from the most recent scan that evaluated them (see
+    app/scan/picks.py). `run` is None until the first scan completes;
+    `rows` is empty when that scan found nothing clearing the bar."""
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM pick_runs ORDER BY scan_ts DESC LIMIT 1")
+        run = cur.fetchone()
+        rows = []
+        if run is not None:
+            cur.execute("SELECT * FROM top_picks WHERE scan_ts = ? ORDER BY rank", (run["scan_ts"],))
+            rows = cur.fetchall()
+    return {"run": dict(run) if run else None, "rows": _rows_to_dicts(rows)}
 
 
 @router.get("/options-trades")

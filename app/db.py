@@ -60,6 +60,7 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         "breakdown_signal": "INTEGER NOT NULL DEFAULT 0",
         "fundamentals_status": "TEXT",
         "fundamentals_pass": "INTEGER NOT NULL DEFAULT 0",
+        "pick_score": "REAL",
     },
     "latest_snapshot": {
         "breakout_holding_since": "TEXT",
@@ -70,6 +71,14 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         "breakdown_signal": "INTEGER NOT NULL DEFAULT 0",
         "fundamentals_status": "TEXT",
         "fundamentals_pass": "INTEGER NOT NULL DEFAULT 0",
+        "pick_score": "REAL",
+    },
+    "fundamentals": {
+        "profit_margin": "REAL",
+        "target_mean_price": "REAL",
+        "recommendation_mean": "REAL",
+        "analyst_count": "INTEGER",
+        "next_earnings_date": "TEXT",
     },
     "options_activity": {
         "implied_volatility": "REAL",

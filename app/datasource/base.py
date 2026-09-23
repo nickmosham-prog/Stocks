@@ -58,8 +58,10 @@ class DataSource(ABC):
 
     @abstractmethod
     def get_fundamentals(self, symbol: str) -> dict | None:
-        """Snapshot of fundamentals used by the BUY Setup quality gate:
-        {net_income, trailing_eps, trailing_pe, revenue_growth_yoy}.
+        """Snapshot of fundamentals used by the BUY Setup quality gate and
+        Top Picks scoring: {net_income, trailing_eps, trailing_pe,
+        revenue_growth_yoy, profit_margin, target_mean_price,
+        recommendation_mean, analyst_count, next_earnings_date (YYYY-MM-DD)}.
         Any individual field may be None (not every ticker has every field
         populated) - callers must treat a missing field as "unknown", never
         as a failing value. Returns None only when the whole fetch failed

@@ -21,7 +21,8 @@
   </header>
 
   <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="signals">Buy Signals</button>
+    <button class="tab active" data-tab="picks">Top Picks</button>
+    <button class="tab" data-tab="signals">Buy Signals</button>
     <button class="tab" data-tab="all">Top Alpha</button>
     <button class="tab" data-tab="premarket">Pre-Market</button>
     <button class="tab" data-tab="regular">Intraday</button>
@@ -31,7 +32,18 @@
   </nav>
 
   <main>
-    <section id="signals-view">
+    <section id="picks-view">
+      <p class="disclaimer" id="picks-meta">
+        Ranked bullish swing ideas (days to weeks). Every pick passed the fundamentals check
+        (profitable, reasonable P/E, growing revenue), is above its 50-day average, and is up today.
+        Screening ideas, not trade instructions &mdash; verify option quotes with your broker.
+      </p>
+      <div id="picks-list" class="picks-list">
+        <div class="empty">Loading...</div>
+      </div>
+    </section>
+
+    <section id="signals-view" hidden>
       <table id="signals-table">
         <thead>
           <tr>

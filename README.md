@@ -26,16 +26,19 @@ session (9:30am-4:00pm ET), it:
    (earnings, FDA, upgrade/downgrade, M&A, etc.).
 5. Combines RVOL + breakout + options into a single ranked **Alpha Score**
    per ticker.
-6. Checks confirmed bullish breakouts against a **fundamentals quality
+6. Ranks the best bullish swing ideas into **Top Picks**, with reasons,
+   risks, and a suggested call option for each (see **Top Picks** below),
+   emailed as a digest twice a day.
+7. Checks confirmed bullish breakouts against a **fundamentals quality
    gate** (profitable, reasonable valuation, growing revenue - see
    **Fundamentals quality gate** below) before calling them a BUY Setup, so
    the screener's strongest signal reflects real financials, not just
    price/volume narrative.
-7. For a qualifying BUY Setup or BREAKDOWN Setup, selects one specific
+8. For a qualifying BUY Setup or BREAKDOWN Setup, selects one specific
    **options trade recommendation** (an exact contract - strike,
    expiration, price) using real option Greeks (see **Options trade
    recommendations** below).
-8. Emails you when a ticker's Alpha Score crosses a threshold, or when a
+9. Emails you when a ticker's Alpha Score crosses a threshold, or when a
    BUY/BREAKDOWN Setup or options trade recommendation fires (see
    **Email alerts** below) - one summary email per cycle per tier, not one
    per ticker, with a per-symbol cooldown so a hot name doesn't spam you.
@@ -78,7 +81,10 @@ There are **four alert tiers**, all under `alerts:` in `config/settings.yaml`:
 
 - **General** (`alerts.alpha_score_threshold`, default 80) - a heads-up
   whenever a ticker's Alpha Score crosses this bar. Subject line starts
-  with "Stock alert:".
+  with "Unusual activity:" and names the direction (e.g. "NFLX DOWN 5.9%").
+  **This is not a buy signal** - the Alpha Score rewards big moves in either
+  direction, so a crash can score as high as a rally. For buy ideas, use
+  **Top Picks** (below).
 - **BUY Setup** (`alerts.buy_setup`, default threshold 88) - a stricter,
   separate tier that only fires when Alpha Score clears its own higher
   bar **and** the breakout is bullish **and** has actually *held* for
@@ -143,6 +149,54 @@ whatever credential that provider uses for SMTP login.
 running. There's no push notification, SMS, or "live" dashboard hosted
 outside your machine - the web dashboard at `http://127.0.0.1:8000` and
 this email are the only two outputs.
+
+## Top Picks (the main buy-idea output)
+
+Top Picks is a ranked list of up to 5 bullish **swing-trade ideas** (days
+to weeks), each with plain-English reasons, risks, and a suggested call
+option. It is shown on the dashboard's default **Top Picks** tab (updated
+every scan) and emailed as a digest at **10:00 and 15:00 ET** on weekdays.
+
+**Who can be picked** - all three must be true:
+- passes the **fundamentals check** (profitable, reasonable P/E, growing
+  revenue - see below). This also excludes ETFs.
+- is **above its 50-day moving average** (in an uptrend)
+- is **up on the day** - a stock falling on heavy volume (like a news
+  crash) can never be a pick
+
+**How they're ranked** - a 0-100 **Pick Score** blending:
+| Component | Weight | What scores well |
+|---|---|---|
+| Trend | 30% | above 50- and 200-day averages, near its 52-week high, beating the S&P 500 over 3 months |
+| Momentum | 25% | up today on above-normal volume, breaking/holding above yesterday's high |
+| Quality | 25% | revenue growth, profit margin, reasonable P/E |
+| Analyst | 10% | upside to Wall Street's average price target, consensus rating |
+| Options | 10% | call volume outweighing put volume |
+
+Only stocks scoring at least `picks.min_score` (default 55) are listed, so a
+weak or choppy day can produce fewer than 5 picks, or none. The digest still
+arrives on those days and says so, so a quiet inbox never leaves you
+wondering whether the app is running.
+
+**Each pick's option idea** uses the same 30-45 day, ~0.65 delta call
+selection described in **Options trade recommendations** below. The idea
+includes the approximate cost per contract (100 shares), the daily time
+decay, and the **breakeven price at expiration** (strike + premium) with the
+% move needed to get there. The risks list flags **earnings before the
+option expires**, since options often lose value right after earnings even
+when the stock moves your way. It also flags a stock stretched far above its
+50-day average, and thin options liquidity.
+
+Everything is tunable under `picks:` in `config/settings.yaml` (count, score
+floor, digest times, component weights). These are screening ideas, not
+trade instructions: check live quotes with your broker, size positions so
+losing the whole option premium is acceptable, and decide your exit before
+you enter.
+
+**First start after upgrading:** the app downloads ~400 days of daily
+history (needed for the 200-day average and 52-week high) plus the extra
+fundamentals fields, once. This can take several minutes before the
+dashboard comes up; later starts are fast.
 
 ## Fundamentals quality gate
 
@@ -209,7 +263,9 @@ entirely via `scoring.options_strategy.enabled: false`.
 
 ## Dashboard
 
-- **Buy Signals** (default tab) - only tickers currently meeting the BUY
+- **Top Picks** (default tab) - the ranked bullish ideas described above,
+  as cards with reasons, risks, and the suggested call option.
+- **Buy Signals** - only tickers currently meeting the BUY
   or BREAKDOWN Setup criteria, with columns emphasizing *why*: direction,
   Alpha Score, hold time, fundamentals status, and the recommended option
   contract (if one was found).
@@ -233,8 +289,8 @@ disagree. This works whether or not email is configured; it's controlled
 by `alerts.buy_setup.enabled`/`alerts.breakdown_setup.enabled` in
 `config/settings.yaml` independently of whether alert emails are set up.
 Click any row to open a drill-down panel with the full score breakdown
-(including hold time, average IV, fundamentals, and the recommended
-contract if any), recent headlines, and flagged option contracts. The
+(including hold time, average IV, fundamentals, analyst target, trend
+metrics, and the recommended contract if any), recent headlines, and flagged option contracts. The
 dashboard polls for new data every 30 seconds.
 
 ## Known limitations

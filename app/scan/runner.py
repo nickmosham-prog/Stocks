@@ -25,6 +25,7 @@ from app.scan import (
     news,
     options_flow,
     options_strategy,
+    picks,
     rvol,
 )
 
@@ -32,14 +33,17 @@ log = logging.getLogger(__name__)
 
 _news_cache: TTLCache | None = None
 _options_cache: TTLCache | None = None
+_pick_contract_cache: TTLCache | None = None
 
 
 def _caches() -> tuple[TTLCache, TTLCache]:
-    global _news_cache, _options_cache
+    global _news_cache, _options_cache, _pick_contract_cache
     if _news_cache is None:
         settings = load_settings()
+        options_ttl = settings.get("enrichment", "options_cache_minutes", default=15) * 60
         _news_cache = TTLCache(settings.get("enrichment", "news_cache_minutes", default=30) * 60)
-        _options_cache = TTLCache(settings.get("enrichment", "options_cache_minutes", default=15) * 60)
+        _options_cache = TTLCache(options_ttl)
+        _pick_contract_cache = TTLCache(options_ttl)
     return _news_cache, _options_cache
 
 
@@ -180,8 +184,12 @@ def run_scan(source: DataSource, session: str) -> dict:
     with db.cursor() as cur:
         cur.execute("SELECT symbol, breakout_direction, breakout_holding_since FROM latest_snapshot")
         prev_state = {row["symbol"]: dict(row) for row in cur.fetchall()}
-        cur.execute("SELECT symbol, fundamentals_status FROM fundamentals")
-        fundamentals_by_symbol = {row["symbol"]: row["fundamentals_status"] for row in cur.fetchall()}
+        cur.execute("SELECT * FROM fundamentals")
+        fundamentals_rows = {row["symbol"]: dict(row) for row in cur.fetchall()}
+        cur.execute("SELECT * FROM trend_metrics")
+        trend_rows = {row["symbol"]: dict(row) for row in cur.fetchall()}
+    fundamentals_by_symbol = {symbol: row["fundamentals_status"] for symbol, row in fundamentals_rows.items()}
+    pick_info: dict[str, dict] = {}
 
     all_rows = []
     for symbol, data in prelim.items():
@@ -234,6 +242,12 @@ def run_scan(source: DataSource, session: str) -> dict:
         row["fundamentals_pass"] = int(row["fundamentals_status"] == "pass")
         row["buy_signal"] = int(buy_setup.meets_buy_setup_criteria(row, settings))
         row["breakdown_signal"] = int(breakdown_setup.meets_breakdown_setup_criteria(row, settings))
+        try:
+            pick_info[symbol] = picks.score_row(row, fundamentals_rows.get(symbol), trend_rows.get(symbol), settings)
+        except Exception:
+            log.exception("pick scoring failed for %s", symbol)
+            pick_info[symbol] = {"pick_score": None, "eligible": False}
+        row["pick_score"] = pick_info[symbol]["pick_score"]
 
         with db.cursor() as cur:
             cur.execute(
@@ -244,14 +258,16 @@ def run_scan(source: DataSource, session: str) -> dict:
                      breakout_score, breakout_direction, breakout_holding_since,
                      breakout_hold_minutes, breakout_confirmed, options_score, call_put_ratio,
                      max_vol_oi_ratio, avg_implied_volatility, has_recent_news, alpha_score,
-                     buy_signal, breakdown_signal, fundamentals_status, fundamentals_pass, data_stale)
+                     buy_signal, breakdown_signal, fundamentals_status, fundamentals_pass, pick_score,
+                     data_stale)
                 VALUES
                     (:symbol, :session, :scan_ts, :price, :cum_volume_today, :cum_avg_volume,
                      :rvol, :rvol_score, :gap_pct, :range_expansion, :breakout_level_pct,
                      :breakout_score, :breakout_direction, :breakout_holding_since,
                      :breakout_hold_minutes, :breakout_confirmed, :options_score, :call_put_ratio,
                      :max_vol_oi_ratio, :avg_implied_volatility, :has_recent_news, :alpha_score,
-                     :buy_signal, :breakdown_signal, :fundamentals_status, :fundamentals_pass, :data_stale)
+                     :buy_signal, :breakdown_signal, :fundamentals_status, :fundamentals_pass, :pick_score,
+                     :data_stale)
                 """,
                 row,
             )
@@ -328,6 +344,12 @@ def run_scan(source: DataSource, session: str) -> dict:
                     ),
                 )
 
+    if settings.get("picks", "enabled", default=True):
+        try:
+            _record_top_picks(source, session, scan_ts, all_rows, pick_info, fundamentals_rows, trend_rows, settings)
+        except Exception:
+            log.exception("top picks selection failed")
+
     try:
         alerts.process_alerts(all_rows, trade_recs)
     except Exception:
@@ -350,3 +372,89 @@ def run_scan(source: DataSource, session: str) -> dict:
         session, len(prelim), len(failed), len(enrichment),
     )
     return {"scored": len(prelim), "failed": len(failed), "enriched": len(enrichment)}
+
+
+def _pick_contract(source: DataSource, symbol: str, price: float, settings) -> dict | None:
+    _caches()
+
+    def fetch():
+        try:
+            return options_strategy.find_recommended_contract(source, symbol, price, "bullish", settings)
+        except Exception:
+            log.exception("pick contract selection failed for %s", symbol)
+            return None
+
+    return _pick_contract_cache.get_or_set(symbol, fetch)
+
+
+def _record_top_picks(
+    source: DataSource,
+    session: str,
+    scan_ts: str,
+    all_rows: list[dict],
+    pick_info: dict[str, dict],
+    fundamentals_rows: dict[str, dict],
+    trend_rows: dict[str, dict],
+    settings,
+) -> list[dict]:
+    """Ranks this cycle's Top Picks, attaches a call contract + reasons to
+    each, and persists them (plus a pick_runs row, so an empty result is
+    distinguishable from "no scan ran")."""
+    rows_by_symbol = {row["symbol"]: row for row in all_rows}
+    candidates = [{"symbol": symbol, **info} for symbol, info in pick_info.items()]
+    ranked = picks.rank_picks(
+        candidates,
+        count=settings.get("picks", "count", default=5),
+        min_score=settings.get("picks", "min_score", default=55),
+    )
+
+    records = []
+    for rank, candidate in enumerate(ranked, start=1):
+        symbol = candidate["symbol"]
+        row = rows_by_symbol[symbol]
+        contract = None
+        if settings.get("scoring", "options_strategy", "enabled", default=True):
+            contract = _pick_contract(source, symbol, row["price"], settings)
+        level, move = picks.breakeven(contract, row["price"])
+        reasons, risks = picks.build_thesis(
+            row, fundamentals_rows.get(symbol), trend_rows.get(symbol), contract, settings=settings
+        )
+        contract = contract or {}
+        records.append(
+            {
+                "scan_ts": scan_ts,
+                "rank": rank,
+                "symbol": symbol,
+                "price": row["price"],
+                "pick_score": candidate["pick_score"],
+                "trend_score": candidate.get("trend_score"),
+                "momentum_score": candidate.get("momentum_score"),
+                "quality_score": candidate.get("quality_score"),
+                "analyst_score": candidate.get("analyst_score"),
+                "options_score": candidate.get("options_score"),
+                "reasons": "\n".join(reasons),
+                "risks": "\n".join(risks),
+                "contract_symbol": contract.get("contract_symbol"),
+                "option_type": contract.get("option_type"),
+                "strike": contract.get("strike"),
+                "expiration": contract.get("expiration"),
+                "days_to_expiration": contract.get("days_to_expiration"),
+                "option_price": contract.get("price"),
+                "delta": contract.get("delta"),
+                "theta": contract.get("theta"),
+                "open_interest": contract.get("open_interest"),
+                "breakeven": level,
+                "breakeven_move_pct": move,
+            }
+        )
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT OR REPLACE INTO pick_runs (scan_ts, session, candidates, picks_count) VALUES (?, ?, ?, ?)",
+            (scan_ts, session, sum(1 for c in candidates if c.get("eligible")), len(records)),
+        )
+        for record in records:
+            columns = ", ".join(record)
+            placeholders = ", ".join(f":{c}" for c in record)
+            cur.execute(f"INSERT INTO top_picks ({columns}) VALUES ({placeholders})", record)
+    return records

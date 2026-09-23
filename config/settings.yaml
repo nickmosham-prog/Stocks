@@ -108,7 +108,28 @@ scoring:
     min_open_interest: 50
     min_volume: 10
 
-# Email alerts. Two tiers: a general heads-up when Alpha Score crosses
+# Top Picks: a ranked list of the best bullish swing-trade ideas (days to
+# weeks) with plain-English reasons, risks, and a suggested call option -
+# the main "what should I look at buying" output. See app/scan/picks.py.
+# A stock is only eligible if it passes the fundamentals check above, is
+# above its 50-day average, and is up on the day; eligible stocks are then
+# ranked by the weighted Pick Score (0-100). Shown on the dashboard's Top
+# Picks tab (updated every scan) and emailed at `digest_times` (ET, Mon-Fri).
+picks:
+  enabled: true
+  count: 5                 # picks per digest; fewer are sent on a weak day
+  min_score: 55            # Pick Score floor - raise for fewer, stronger picks
+  daily_history_days: 400  # calendar days of daily bars kept (covers the 200-day average + 52-week high)
+  digest_times: ["10:00", "15:00"]
+  max_extension_above_sma50_pct: 15   # flagged as a risk (not excluded) above this
+  weights:
+    trend: 0.30      # above 50/200-day averages, near 52-week high, beating the S&P 500
+    momentum: 0.25   # up today on above-normal volume, breaking yesterday's high
+    quality: 0.25    # revenue growth, profit margin, reasonable P/E
+    analyst: 0.10    # upside to analysts' average price target, consensus rating
+    options: 0.10    # call volume vs put volume (bullish options positioning)
+
+# Email alerts. Per-scan tiers: a general heads-up when Alpha Score crosses
 # `alpha_score_threshold`, and a stricter "BUY Setup" tier (buy_setup: below)
 # for a stronger combined signal. Both use the same Gmail "App Password"
 # (Google Account -> Security -> 2-Step Verification -> App passwords),

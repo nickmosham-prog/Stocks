@@ -87,6 +87,11 @@ def _fetch_and_evaluate(source: DataSource, symbol: str, settings) -> dict:
         "revenue_growing": _to_int_or_none(evaluated["revenue_growing"]),
         "fundamentals_status": evaluated["fundamentals_status"],
         "fetched_at": datetime.now(tz=timezone.utc).isoformat(),
+        "profit_margin": clean((fundamentals or {}).get("profit_margin")),
+        "target_mean_price": clean((fundamentals or {}).get("target_mean_price")),
+        "recommendation_mean": clean((fundamentals or {}).get("recommendation_mean")),
+        "analyst_count": clean((fundamentals or {}).get("analyst_count")),
+        "next_earnings_date": (fundamentals or {}).get("next_earnings_date"),
     }
     return row
 
@@ -119,6 +124,22 @@ def refresh_all(source: DataSource, symbols: list[str]) -> tuple[int, int]:
     return succeeded, failed
 
 
+def _missing_picks_fields() -> bool:
+    """Rows fetched before the Top Picks upgrade have every new column NULL;
+    refetch rather than wait up to a day for the scheduled refresh."""
+    with db.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN profit_margin IS NOT NULL OR target_mean_price IS NOT NULL
+                            THEN 1 ELSE 0 END) AS enriched
+            FROM fundamentals
+            """
+        )
+        row = cur.fetchone()
+    return bool(row["total"]) and not row["enriched"]
+
+
 def has_fresh_fundamentals(symbol: str) -> bool:
     settings = load_settings()
     refresh_hours = settings.get("scoring", "fundamentals", "refresh_hours", default=24)
@@ -133,8 +154,11 @@ def has_fresh_fundamentals(symbol: str) -> bool:
 
 
 def needs_bootstrap(symbols: list[str]) -> bool:
-    """True if fewer than half the watchlist has fresh fundamentals -
-    mirrors volume_profile.needs_bootstrap exactly."""
+    """True if fewer than half the watchlist has fresh fundamentals, or the
+    stored rows predate the Top Picks fields (analyst target etc.) -
+    otherwise mirrors volume_profile.needs_bootstrap."""
+    if symbols and _missing_picks_fields():
+        return True
     if not symbols:
         return False
     fresh = sum(1 for symbol in symbols if has_fresh_fundamentals(symbol))

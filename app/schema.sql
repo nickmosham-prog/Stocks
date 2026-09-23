@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS scan_snapshots (
     breakdown_signal INTEGER NOT NULL DEFAULT 0,
     fundamentals_status TEXT,
     fundamentals_pass INTEGER NOT NULL DEFAULT 0,
+    pick_score REAL,
     data_stale INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_scan_snapshots_symbol_ts ON scan_snapshots(symbol, scan_ts);
@@ -96,6 +97,7 @@ CREATE TABLE IF NOT EXISTS latest_snapshot (
     breakdown_signal INTEGER NOT NULL DEFAULT 0,
     fundamentals_status TEXT,
     fundamentals_pass INTEGER NOT NULL DEFAULT 0,
+    pick_score REAL,
     data_stale INTEGER NOT NULL DEFAULT 0,
     enriched INTEGER NOT NULL DEFAULT 0
 );
@@ -129,8 +131,67 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     revenue_growing INTEGER,
     fundamentals_status TEXT NOT NULL DEFAULT 'unknown'
         CHECK (fundamentals_status IN ('pass', 'fail', 'unknown')),
-    fetched_at TEXT NOT NULL
+    fetched_at TEXT NOT NULL,
+    profit_margin REAL,
+    target_mean_price REAL,
+    recommendation_mean REAL,
+    analyst_count INTEGER,
+    next_earnings_date TEXT
 );
+
+-- Daily trend snapshot per symbol, computed from daily_ohlc after each EOD
+-- refresh (no network) - backs the Top Picks trend component.
+CREATE TABLE IF NOT EXISTS trend_metrics (
+    symbol TEXT PRIMARY KEY,
+    last_close REAL,
+    sma50 REAL,
+    sma200 REAL,
+    high_52w REAL,
+    pct_from_high REAL,
+    ret_3m_pct REAL,
+    rs_3m_pct REAL,
+    history_days INTEGER,
+    computed_at TEXT NOT NULL
+);
+
+-- One row per scan cycle that evaluated Top Picks, so "the latest scan
+-- produced zero picks" is distinguishable from "no scan has run".
+CREATE TABLE IF NOT EXISTS pick_runs (
+    scan_ts TEXT PRIMARY KEY,
+    session TEXT,
+    candidates INTEGER,
+    picks_count INTEGER
+);
+
+-- Ranked Top Picks per scan cycle: the stock, why it was picked, its
+-- risks, and the recommended call contract (if one was found).
+CREATE TABLE IF NOT EXISTS top_picks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_ts TEXT NOT NULL,
+    rank INTEGER NOT NULL,
+    symbol TEXT NOT NULL,
+    price REAL,
+    pick_score REAL,
+    trend_score REAL,
+    momentum_score REAL,
+    quality_score REAL,
+    analyst_score REAL,
+    options_score REAL,
+    reasons TEXT,
+    risks TEXT,
+    contract_symbol TEXT,
+    option_type TEXT,
+    strike REAL,
+    expiration TEXT,
+    days_to_expiration INTEGER,
+    option_price REAL,
+    delta REAL,
+    theta REAL,
+    open_interest REAL,
+    breakeven REAL,
+    breakeven_move_pct REAL
+);
+CREATE INDEX IF NOT EXISTS idx_top_picks_scan_ts ON top_picks(scan_ts, rank);
 
 -- Recommended option contract per qualifying ticker each scan cycle
 -- (calls on confirmed bullish setups, puts on confirmed bearish ones).

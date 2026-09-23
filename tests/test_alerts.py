@@ -243,7 +243,7 @@ def test_general_and_buy_setup_tiers_are_independent(monkeypatch):
 
     assert len(sent) == 2
     subjects = [s for s, _ in sent]
-    assert any(subj.startswith("Stock alert:") for subj in subjects)
+    assert any(subj.startswith("Unusual activity:") for subj in subjects)
     assert any(subj.startswith("BUY Setup:") for subj in subjects)
 
 
@@ -347,3 +347,104 @@ def test_options_trade_disabled_by_default_flag(monkeypatch):
     alerts.process_alerts([_row(alpha_score=95.0)], {"AAPL": _trade_contract()})
 
     assert sent == []
+
+
+# --- Top Picks digest -------------------------------------------------------
+
+def _pick(rank=1, symbol="GOOD", with_contract=True):
+    pick = {
+        "rank": rank,
+        "symbol": symbol,
+        "price": 105.0,
+        "pick_score": 78.4,
+        "reasons": "Up 3.0% today on 2.5x normal volume\nRevenue +20% YoY, 22% profit margin, P/E 22",
+        "risks": "Earnings on 2026-10-20, before the option expires",
+        "contract_symbol": None, "strike": None, "expiration": None, "days_to_expiration": None,
+        "option_price": None, "delta": None, "theta": None, "breakeven": None, "breakeven_move_pct": None,
+    }
+    if with_contract:
+        pick.update({
+            "contract_symbol": "GOOD261030C00100000", "strike": 100.0, "expiration": "2026-10-30",
+            "days_to_expiration": 37, "option_price": 8.2, "delta": 0.66, "theta": -0.07,
+            "breakeven": 108.2, "breakeven_move_pct": 3.1,
+        })
+    return pick
+
+
+_RUN = {"scan_ts": "2026-09-23T09:58:00-04:00", "candidates": 7, "picks_count": 2}
+
+
+def test_digest_with_picks_lists_reasons_and_option():
+    subject, body = alerts._format_picks_digest("10:00", [_pick(), _pick(2, "ALSO", with_contract=False)], _RUN)
+    assert subject == "Top Picks 10:00 ET: GOOD, ALSO"
+    assert "#1 GOOD" in body and "Pick Score 78/100" in body
+    assert "Up 3.0% today on 2.5x normal volume" in body
+    assert "Earnings on 2026-10-20" in body
+    assert "CALL $100 expiring 2026-10-30 (37 days)" in body
+    assert "~$820 per contract" in body
+    assert "breakeven $108.20 at expiration (+3.1% from here)" in body
+    assert "stock-only idea" in body  # ALSO had no contract
+    assert "not trade instructions" in body.replace("\n", " ")
+
+
+def test_digest_with_no_picks_still_explains():
+    subject, body = alerts._format_picks_digest("15:00", [], _RUN)
+    assert subject == "Top Picks 15:00 ET: no stock cleared the bar"
+    assert "7 passed the basic" in body
+
+
+def test_digest_without_fresh_scan_says_so():
+    subject, body = alerts._format_picks_digest("10:00", [], None)
+    assert "no fresh scan data" in subject
+    assert "logs/stocks.log" in body
+
+
+def _fake_settings_for_digest(picks_enabled=True):
+    raw = _fake_configured_settings().raw
+    raw["picks"] = {"enabled": picks_enabled}
+    return Settings(raw=raw)
+
+
+def test_send_picks_digest_sends_once_per_slot(monkeypatch):
+    monkeypatch.setattr(alerts, "load_settings", _fake_settings_for_digest)
+    monkeypatch.setattr(alerts, "_latest_pick_run", lambda now: (_RUN, [_pick()]))
+    log = []
+    monkeypatch.setattr(alerts, "_last_alert_time", lambda symbol, kind: log[-1] if log else None)
+    monkeypatch.setattr(alerts, "_record_alert", lambda symbol, score, sent_at, kind: log.append(sent_at))
+    sent = []
+    monkeypatch.setattr(alerts, "_send_email", lambda cfg, subject, body: sent.append(subject) or True)
+
+    assert alerts.send_picks_digest("10:00") is True
+    assert alerts.send_picks_digest("10:00") is False  # same slot again (e.g. app restart)
+    assert sent == ["Top Picks 10:00 ET: GOOD"]
+
+
+def test_send_picks_digest_respects_picks_disabled(monkeypatch):
+    monkeypatch.setattr(alerts, "load_settings", lambda: _fake_settings_for_digest(picks_enabled=False))
+    monkeypatch.setattr(alerts, "_send_email", lambda *a: (_ for _ in ()).throw(AssertionError("sent")))
+    assert alerts.send_picks_digest("10:00") is False
+
+
+def test_general_alert_subject_shows_direction():
+    subject, body = alerts._format_email([_row(symbol="NFLX", alpha_score=88.0, gap_pct=-5.9)])
+    assert subject == "Unusual activity: NFLX DOWN 5.9% (Alpha 88)"
+    assert "not a buy signal" in body
+
+
+def test_send_email_handles_non_ascii(monkeypatch):
+    captured = {}
+
+    class FakeSMTP:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self): pass
+        def login(self, *a): pass
+        def sendmail(self, from_addr, to_addrs, msg):
+            msg.encode("ascii")  # smtplib requires an ASCII-safe string
+            captured["msg"] = msg
+
+    monkeypatch.setattr(alerts.smtplib, "SMTP", FakeSMTP)
+    cfg = _fake_configured_settings().raw["alerts"]["email"]
+    assert alerts._send_email(cfg, "Top Picks — test", "Reason — up 3% × volume") is True
+    assert "msg" in captured
