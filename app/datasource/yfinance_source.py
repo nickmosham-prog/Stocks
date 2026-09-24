@@ -43,6 +43,40 @@ def _with_retry(fn, *args, **kwargs):
     return None
 
 
+def _num(value, default: float | None = 0.0) -> float | None:
+    """float(value), or `default` when missing/NaN. `float(x or 0)` is not
+    enough: yfinance reports NaN volume for contracts that haven't traded
+    today, and NaN is truthy, so it would slip straight through."""
+    try:
+        return float(value) if pd.notna(value) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_chain_rows(df: pd.DataFrame, expiration: str, option_type: str) -> list[dict]:
+    contracts = []
+    for _, row in df.iterrows():
+        strike = _num(row.get("strike"), None)
+        if not strike:
+            continue
+        bid, ask = _num(row.get("bid"), None), _num(row.get("ask"), None)
+        contracts.append(
+            {
+                "expiration": expiration,
+                "option_type": option_type,
+                "strike": strike,
+                "volume": _num(row.get("volume")),
+                "open_interest": _num(row.get("openInterest")),
+                "last_price": _num(row.get("lastPrice")),
+                "bid": bid or None,
+                "ask": ask or None,
+                "contract_symbol": row.get("contractSymbol", ""),
+                "implied_volatility": _num(row.get("impliedVolatility"), None),
+            }
+        )
+    return contracts
+
+
 def _earnings_date(info: dict) -> str | None:
     """Next earnings date (YYYY-MM-DD) from Ticker.info's epoch-seconds
     fields, or None. Past dates are kept as-is - callers compare against
@@ -174,24 +208,7 @@ class YFinanceSource(DataSource):
             for option_type, df in (("call", chain.calls), ("put", chain.puts)):
                 if df is None or df.empty:
                     continue
-                for _, row in df.iterrows():
-                    iv = row.get("impliedVolatility")
-                    bid = row.get("bid")
-                    ask = row.get("ask")
-                    contracts.append(
-                        {
-                            "expiration": expiration,
-                            "option_type": option_type,
-                            "strike": float(row.get("strike", 0) or 0),
-                            "volume": float(row.get("volume", 0) or 0),
-                            "open_interest": float(row.get("openInterest", 0) or 0),
-                            "last_price": float(row.get("lastPrice", 0) or 0),
-                            "bid": float(bid) if pd.notna(bid) and bid else None,
-                            "ask": float(ask) if pd.notna(ask) and ask else None,
-                            "contract_symbol": row.get("contractSymbol", ""),
-                            "implied_volatility": float(iv) if pd.notna(iv) else None,
-                        }
-                    )
+                contracts.extend(_parse_chain_rows(df, expiration, option_type))
         return contracts or None
 
     def get_fundamentals(self, symbol: str) -> dict | None:

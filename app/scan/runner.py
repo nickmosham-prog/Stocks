@@ -309,7 +309,8 @@ def run_scan(source: DataSource, session: str) -> dict:
             direction = "bullish" if row["buy_signal"] else "bearish"
             try:
                 contract, note = options_strategy.find_recommended_contract_with_reason(
-                    source, row["symbol"], row["price"], direction, settings
+                    source, row["symbol"], row["price"], direction, settings,
+                    earnings_date=fundamentals_rows.get(row["symbol"], {}).get("next_earnings_date"),
                 )
             except Exception:
                 log.exception("options trade selection failed for %s", row["symbol"])
@@ -378,17 +379,21 @@ def run_scan(source: DataSource, session: str) -> dict:
     return {"scored": len(prelim), "failed": len(failed), "enriched": len(enrichment)}
 
 
-def _pick_contract(source: DataSource, symbol: str, price: float, settings) -> tuple[dict | None, str | None]:
+def _pick_contract(
+    source: DataSource, symbol: str, price: float, settings, earnings_date=None
+) -> tuple[dict | None, str | None]:
     _caches()
 
     def fetch():
         try:
-            return options_strategy.find_recommended_contract_with_reason(source, symbol, price, "bullish", settings)
+            return options_strategy.find_recommended_contract_with_reason(
+                source, symbol, price, "bullish", settings, earnings_date
+            )
         except Exception:
             log.exception("pick contract selection failed for %s", symbol)
             return None, "Options lookup failed - see logs/stocks.log"
 
-    return _pick_contract_cache.get_or_set(symbol, fetch)
+    return _pick_contract_cache.get_or_set((symbol, earnings_date), fetch)
 
 
 def _record_top_picks(
@@ -418,7 +423,10 @@ def _record_top_picks(
         row = rows_by_symbol[symbol]
         contract, note = None, "Options ideas are turned off (scoring.options_strategy.enabled)"
         if settings.get("scoring", "options_strategy", "enabled", default=True):
-            contract, note = _pick_contract(source, symbol, row["price"], settings)
+            contract, note = _pick_contract(
+                source, symbol, row["price"], settings,
+                earnings_date=fundamentals_rows.get(symbol, {}).get("next_earnings_date"),
+            )
         level, move = picks.breakeven(contract, row["price"])
         reasons, risks = picks.build_thesis(
             row, fundamentals_rows.get(symbol), trend_rows.get(symbol), contract, settings=settings

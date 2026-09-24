@@ -177,3 +177,73 @@ def test_found_contract_has_no_reason():
     chain = [_contract("put", 105.0, _real_exp(35), open_interest=300, volume=0)]
     contract, reason = _reason(_FakeSource([_real_exp(35)], chain))
     assert reason is None and contract["option_type"] == "put"
+
+
+def test_prefers_expiration_before_earnings():
+    # Earnings on day 38: the day-35 contract avoids it, the day-42 one spans it,
+    # even though the day-42 one has more open interest.
+    contracts = [
+        _contract("call", 95.0, _exp(35), open_interest=100),
+        _contract("call", 95.0, _exp(42), open_interest=5000),
+    ]
+    result = select_contract(
+        contracts, spot_price=100.0, direction="bullish", today=TODAY, settings=_settings(),
+        earnings_date=_exp(38),
+    )
+    assert result["expiration"] == _exp(35)
+    assert result["spans_earnings"] is False
+
+
+def test_falls_back_to_spanning_earnings_when_nothing_earlier_qualifies():
+    contracts = [_contract("call", 95.0, _exp(42))]
+    result = select_contract(
+        contracts, spot_price=100.0, direction="bullish", today=TODAY, settings=_settings(),
+        earnings_date=_exp(38),
+    )
+    assert result["expiration"] == _exp(42)
+    assert result["spans_earnings"] is True
+
+
+def test_earnings_outside_window_changes_nothing():
+    contracts = [_contract("call", 95.0, _exp(35), open_interest=100), _contract("call", 95.0, _exp(42), open_interest=5000)]
+    result = select_contract(
+        contracts, spot_price=100.0, direction="bullish", today=TODAY, settings=_settings(),
+        earnings_date=_exp(80),
+    )
+    assert result["expiration"] == _exp(42)  # normal liquidity preference
+    assert result["spans_earnings"] is False
+
+
+def test_nan_open_interest_and_volume_fail_liquidity_after_parsing():
+    import pandas as pd
+    from app.datasource.yfinance_source import _parse_chain_rows
+
+    nan = float("nan")
+    df = pd.DataFrame([
+        {"strike": 95.0, "volume": nan, "openInterest": nan, "lastPrice": 5.0, "bid": nan, "ask": 5.1,
+         "contractSymbol": "X1", "impliedVolatility": 0.30},
+        {"strike": nan, "volume": 5, "openInterest": 5, "lastPrice": 1.0, "bid": 1, "ask": 1.1,
+         "contractSymbol": "X2", "impliedVolatility": 0.30},
+    ])
+    parsed = _parse_chain_rows(df, _exp(35), "call")
+    assert len(parsed) == 1  # missing strike skipped
+    assert parsed[0]["volume"] == 0.0 and parsed[0]["open_interest"] == 0.0 and parsed[0]["bid"] is None
+    assert select_contract(parsed, spot_price=100.0, direction="bullish", today=TODAY, settings=_settings()) is None
+
+
+def test_nan_volume_no_longer_breaks_call_put_ratio():
+    import pandas as pd
+    from app.datasource.yfinance_source import _parse_chain_rows
+    from app.scan.options_flow import compute_options_activity
+
+    nan = float("nan")
+    calls = pd.DataFrame([
+        {"strike": 100.0, "volume": 300, "openInterest": 100, "lastPrice": 2.0, "contractSymbol": "C1", "impliedVolatility": 0.9},
+        {"strike": 110.0, "volume": nan, "openInterest": 50, "lastPrice": 0.5, "contractSymbol": "C2", "impliedVolatility": 0.9},
+    ])
+    puts = pd.DataFrame([
+        {"strike": 90.0, "volume": 100, "openInterest": 400, "lastPrice": 1.5, "contractSymbol": "P1", "impliedVolatility": 0.9},
+    ])
+    contracts = _parse_chain_rows(calls, _exp(10), "call") + _parse_chain_rows(puts, _exp(10), "put")
+    result = compute_options_activity(contracts)
+    assert result["call_put_ratio"] == 3.0

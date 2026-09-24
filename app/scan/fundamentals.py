@@ -51,9 +51,13 @@ def evaluate_fundamentals(fundamentals: dict | None, settings=None) -> dict:
     if cfg.get("require_revenue_growth", True):
         checks.append(revenue_growing)
 
-    if any(c is None for c in checks):
+    # A definite failure outranks missing data: an unprofitable company has
+    # no P/E at all, but it has clearly failed the profitability check.
+    if any(c is not None and not c for c in checks):
+        status = "fail"
+    elif any(c is None for c in checks):
         status = "unknown"
-    elif checks and all(checks):
+    elif checks:
         status = "pass"
     else:
         status = "fail"

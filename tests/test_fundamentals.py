@@ -84,3 +84,18 @@ def test_nan_values_treated_as_unknown_not_fail():
     result = evaluate_fundamentals(_fundamentals(trailing_pe=float("nan")), _settings())
     assert result["pe_in_range"] is None
     assert result["fundamentals_status"] == "unknown"
+
+
+def test_unprofitable_without_pe_is_fail_not_unknown():
+    # Loss-making companies have no trailing P/E; the definite profitability
+    # failure must win over the missing P/E (the U case: "FUND N/A" before).
+    result = evaluate_fundamentals(
+        _fundamentals(net_income=-300_000_000.0, trailing_pe=None, revenue_growth_yoy=0.24), _settings()
+    )
+    assert result["fundamentals_status"] == "fail"
+    assert result["pe_in_range"] is None
+
+
+def test_shrinking_revenue_with_missing_pe_is_fail():
+    result = evaluate_fundamentals(_fundamentals(trailing_pe=None, revenue_growth_yoy=-0.05), _settings())
+    assert result["fundamentals_status"] == "fail"

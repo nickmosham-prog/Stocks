@@ -56,8 +56,17 @@ def _fallback_ivs(contracts: list[dict], spot_price: float) -> dict[str, float]:
     return {exp: statistics.median(ivs) for exp, ivs in by_expiration.items()}
 
 
+def _parse_date(value) -> date | None:
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date() if value else None
+    except ValueError:
+        return None
+
+
 def _select(
-    contracts: list[dict], spot_price: float, direction: str, today: date, settings
+    contracts: list[dict], spot_price: float, direction: str, today: date, settings, earnings_date=None
 ) -> tuple[dict | None, str | None]:
     cfg = settings.get("scoring", "options_strategy", default={})
     option_type = "call" if direction == "bullish" else "put"
@@ -71,6 +80,7 @@ def _select(
     min_open_interest = cfg.get("min_open_interest", 50)
     min_volume = cfg.get("min_volume", 10)
     fallback = _fallback_ivs(contracts, spot_price) if is_valid(spot_price) and spot_price > 0 else {}
+    earnings = _parse_date(earnings_date)
 
     in_window = 0
     candidates = []
@@ -104,6 +114,9 @@ def _select(
                 "theta": greeks["theta"],
                 "days_to_expiration": dte,
                 "price": price,
+                # Expiring on/after earnings exposes the option to the
+                # post-earnings implied-volatility collapse.
+                "spans_earnings": bool(earnings and today <= earnings <= exp_date),
             }
         )
 
@@ -113,7 +126,12 @@ def _select(
         return None, f"No {option_type} near {abs(target_delta):.2f} delta with enough open interest"
 
     candidates.sort(
-        key=lambda c: (c.get("open_interest") or 0, c.get("volume") or 0, -abs(c["delta"] - target_delta)),
+        key=lambda c: (
+            not c["spans_earnings"],  # an expiration before earnings wins whenever one qualifies
+            c.get("open_interest") or 0,
+            c.get("volume") or 0,
+            -abs(c["delta"] - target_delta),
+        ),
         reverse=True,
     )
     return candidates[0], None
@@ -125,15 +143,18 @@ def select_contract(
     direction: str,
     today: date | None = None,
     settings=None,
+    earnings_date=None,
 ) -> dict | None:
     """Given a chain already restricted to the target DTE window, pick one
     contract. Never raises - returns None if nothing qualifies."""
-    contract, _ = _select(contracts, spot_price, direction, today or date.today(), settings or load_settings())
+    contract, _ = _select(
+        contracts, spot_price, direction, today or date.today(), settings or load_settings(), earnings_date
+    )
     return contract
 
 
 def find_recommended_contract_with_reason(
-    source: DataSource, symbol: str, spot_price: float, direction: str, settings=None
+    source: DataSource, symbol: str, spot_price: float, direction: str, settings=None, earnings_date=None
 ) -> tuple[dict | None, str | None]:
     """Fetches expirations, filters to the configured DTE window, fetches
     that chain, and selects one contract. Returns (contract, None), or
@@ -158,11 +179,13 @@ def find_recommended_contract_with_reason(
     if not contracts:
         return None, "Options chain unavailable"
 
-    return _select(contracts, spot_price, direction, today, settings)
+    return _select(contracts, spot_price, direction, today, settings, earnings_date)
 
 
 def find_recommended_contract(
-    source: DataSource, symbol: str, spot_price: float, direction: str, settings=None
+    source: DataSource, symbol: str, spot_price: float, direction: str, settings=None, earnings_date=None
 ) -> dict | None:
-    contract, _ = find_recommended_contract_with_reason(source, symbol, spot_price, direction, settings)
+    contract, _ = find_recommended_contract_with_reason(
+        source, symbol, spot_price, direction, settings, earnings_date
+    )
     return contract
