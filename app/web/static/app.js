@@ -118,7 +118,8 @@ function renderRankings(rows) {
 
 function pickOptionLine(p) {
   if (!p.contract_symbol) {
-    return `<div class="pick-option none">Option idea: no liquid 30-45 day call near 0.65 delta &mdash; stock-only idea</div>`;
+    const reason = p.contract_note || "no liquid 30-45 day call near 0.65 delta";
+    return `<div class="pick-option none">Option idea: none (${esc(reason)}) &mdash; stock-only idea</div>`;
   }
   const perContract = p.option_price === null ? null : Math.round(p.option_price * 100);
   const move = p.breakeven_move_pct === null ? "" : ` (${p.breakeven_move_pct >= 0 ? "+" : ""}${fmtNum(p.breakeven_move_pct, 1)}% from here)`;
@@ -183,8 +184,10 @@ function renderSignals(rows, tradesBySymbol) {
       <td data-label="Direction" class="${directionClass}">${direction}</td>
       <td data-label="Alpha Score">${scoreBar(r.alpha_score)}</td>
       <td data-label="Hold Time">${holdBadge(r)}</td>
-      <td data-label="Fundamentals">${r.buy_signal ? fundamentalsBadge(r) : "&mdash;"}</td>
-      <td data-label="Recommended Contract">${compactContract(tradesBySymbol[r.symbol])}</td>
+      <td data-label="Fundamentals">${fundamentalsBadge(r)}</td>
+      <td data-label="Recommended Contract">${
+        r.contract_note ? `<span class="contract-note">${esc(r.contract_note)}</span>` : compactContract(tradesBySymbol[r.symbol])
+      }</td>
     </tr>`;
     })
     .join("");
@@ -405,8 +408,8 @@ async function refreshStatus() {
     const dot = el("status-dot");
     dot.className = "status-dot " + (s.market_open ? "open" : "closed");
     el("status-text").textContent = s.market_open
-      ? `Market open (${s.current_session}) &middot; ${s.tickers_tracked} tickers tracked`
-      : `Market closed &middot; ${s.tickers_tracked} tickers tracked`;
+      ? `Market open (${s.current_session}) \u00b7 ${s.tickers_tracked} tickers tracked`
+      : `Market closed \u00b7 ${s.tickers_tracked} tickers tracked`;
     el("status-time").textContent =
       new Date(s.server_time_et).toLocaleTimeString("en-US", { timeZone: "America/New_York" }) + " ET";
   } catch (e) {

@@ -448,3 +448,10 @@ def test_send_email_handles_non_ascii(monkeypatch):
     cfg = _fake_configured_settings().raw["alerts"]["email"]
     assert alerts._send_email(cfg, "Top Picks — test", "Reason — up 3% × volume") is True
     assert "msg" in captured
+
+
+def test_digest_explains_missing_option_idea():
+    pick = _pick(with_contract=False)
+    pick["contract_note"] = "No expiration 30-45 days out"
+    _, body = alerts._format_picks_digest("10:00", [pick], _RUN)
+    assert "Option idea: none (No expiration 30-45 days out) - stock-only idea" in body

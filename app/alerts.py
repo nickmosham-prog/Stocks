@@ -362,7 +362,8 @@ def _format_pick(pick: dict) -> str:
             lines.append("     " + ", ".join(detail))
         lines.append(f"     contract: {pick['contract_symbol']}")
     else:
-        lines.append("  Option idea: none - no liquid 30-45 day call near 0.65 delta; stock-only idea")
+        reason = pick.get("contract_note") or "no liquid 30-45 day call near 0.65 delta"
+        lines.append(f"  Option idea: none ({reason}) - stock-only idea")
     return "\n".join(lines)
 
 

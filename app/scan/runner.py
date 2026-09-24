@@ -248,6 +248,7 @@ def run_scan(source: DataSource, session: str) -> dict:
             log.exception("pick scoring failed for %s", symbol)
             pick_info[symbol] = {"pick_score": None, "eligible": False}
         row["pick_score"] = pick_info[symbol]["pick_score"]
+        row["contract_note"] = None
 
         with db.cursor() as cur:
             cur.execute(
@@ -307,13 +308,16 @@ def run_scan(source: DataSource, session: str) -> dict:
                 continue
             direction = "bullish" if row["buy_signal"] else "bearish"
             try:
-                contract = options_strategy.find_recommended_contract(
+                contract, note = options_strategy.find_recommended_contract_with_reason(
                     source, row["symbol"], row["price"], direction, settings
                 )
             except Exception:
                 log.exception("options trade selection failed for %s", row["symbol"])
-                contract = None
+                contract, note = None, "Options lookup failed - see logs/stocks.log"
             if not contract:
+                row["contract_note"] = note
+                with db.cursor() as cur:
+                    cur.execute("UPDATE latest_snapshot SET contract_note = ? WHERE symbol = ?", (note, row["symbol"]))
                 continue
             trade_recs[row["symbol"]] = {**contract, "direction": direction}
             with db.cursor() as cur:
@@ -374,15 +378,15 @@ def run_scan(source: DataSource, session: str) -> dict:
     return {"scored": len(prelim), "failed": len(failed), "enriched": len(enrichment)}
 
 
-def _pick_contract(source: DataSource, symbol: str, price: float, settings) -> dict | None:
+def _pick_contract(source: DataSource, symbol: str, price: float, settings) -> tuple[dict | None, str | None]:
     _caches()
 
     def fetch():
         try:
-            return options_strategy.find_recommended_contract(source, symbol, price, "bullish", settings)
+            return options_strategy.find_recommended_contract_with_reason(source, symbol, price, "bullish", settings)
         except Exception:
             log.exception("pick contract selection failed for %s", symbol)
-            return None
+            return None, "Options lookup failed - see logs/stocks.log"
 
     return _pick_contract_cache.get_or_set(symbol, fetch)
 
@@ -412,9 +416,9 @@ def _record_top_picks(
     for rank, candidate in enumerate(ranked, start=1):
         symbol = candidate["symbol"]
         row = rows_by_symbol[symbol]
-        contract = None
+        contract, note = None, "Options ideas are turned off (scoring.options_strategy.enabled)"
         if settings.get("scoring", "options_strategy", "enabled", default=True):
-            contract = _pick_contract(source, symbol, row["price"], settings)
+            contract, note = _pick_contract(source, symbol, row["price"], settings)
         level, move = picks.breakeven(contract, row["price"])
         reasons, risks = picks.build_thesis(
             row, fundamentals_rows.get(symbol), trend_rows.get(symbol), contract, settings=settings
@@ -445,6 +449,7 @@ def _record_top_picks(
                 "open_interest": contract.get("open_interest"),
                 "breakeven": level,
                 "breakeven_move_pct": move,
+                "contract_note": None if contract else note,
             }
         )
 

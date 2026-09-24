@@ -254,7 +254,18 @@ Delta and theta are computed with a **simplified Black-Scholes model**
 heuristic for contract selection, not a precise pricing engine. If nothing
 in the target window/delta band/liquidity bar qualifies (common - not
 every ticker has listed options in that exact range), no recommendation is
-made for that ticker; this is expected, not an error.
+made for that ticker; this is expected, not an error. In that case the
+dashboard and digest show the **reason** instead of a blank, e.g. "No
+expiration 30-45 days out" or "No put near 0.65 delta with enough open
+interest".
+
+A contract counts as liquid enough if it has either enough open interest
+(`min_open_interest`) **or** enough volume today (`min_volume`). In-the-money
+options often trade only a few times a day while still being widely held.
+Yahoo's implied-volatility figure is often junk for in-the-money strikes
+(near 0% or several hundred %). When that happens, the model uses the
+typical implied volatility of near-the-money strikes for the same
+expiration instead of throwing the contract away.
 
 **This is not a trade instruction.** Verify pricing and Greeks with your
 broker before acting - the same disclaimer appears in the dashboard's

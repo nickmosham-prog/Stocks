@@ -72,6 +72,10 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         "fundamentals_status": "TEXT",
         "fundamentals_pass": "INTEGER NOT NULL DEFAULT 0",
         "pick_score": "REAL",
+        "contract_note": "TEXT",
+    },
+    "top_picks": {
+        "contract_note": "TEXT",
     },
     "fundamentals": {
         "profit_margin": "REAL",

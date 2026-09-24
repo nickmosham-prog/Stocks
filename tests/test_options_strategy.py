@@ -102,3 +102,78 @@ def test_missing_price_excludes_contract():
     c = _contract("call", 95.0, _exp(35), last_price=0.0, ask=None)
     result = select_contract([c], spot_price=100.0, direction="bullish", today=TODAY, settings=_settings())
     assert result is None
+
+
+def test_itm_contract_with_open_interest_but_no_volume_is_selected():
+    # Common for in-the-money contracts: plenty of open interest, few trades today.
+    c = _contract("call", 95.0, _exp(35), open_interest=500, volume=0)
+    result = select_contract([c], spot_price=100.0, direction="bullish", today=TODAY, settings=_settings())
+    assert result is not None and result["strike"] == 95.0
+
+
+def test_bogus_iv_borrows_near_the_money_iv():
+    # yfinance often reports ~0 IV for ITM strikes, which would push delta to ~1.
+    contracts = [
+        _contract("call", 95.0, _exp(35), iv=0.00001),
+        _contract("call", 100.0, _exp(35), iv=0.30, open_interest=10, volume=0),  # illiquid, but a sane IV source
+        _contract("call", 104.0, _exp(35), iv=0.30, open_interest=10, volume=0),
+    ]
+    result = select_contract(contracts, spot_price=100.0, direction="bullish", today=TODAY, settings=_settings())
+    assert result is not None
+    assert result["strike"] == 95.0
+    assert result["iv_estimated"] is True
+    assert result["implied_volatility"] == 0.30
+    assert 0.55 <= result["delta"] <= 0.75
+
+
+def test_bogus_iv_without_fallback_is_skipped():
+    c = _contract("call", 95.0, _exp(35), iv=9.0)
+    assert select_contract([c], spot_price=100.0, direction="bullish", today=TODAY, settings=_settings()) is None
+
+
+class _FakeSource:
+    def __init__(self, expirations, chain):
+        self.expirations, self.chain = expirations, chain
+
+    def get_option_expirations(self, symbol):
+        return self.expirations
+
+    def get_option_chain(self, symbol, expirations=None):
+        return self.chain
+
+
+def _reason(source, direction="bearish", spot=100.0):
+    from app.scan import options_strategy
+    return options_strategy.find_recommended_contract_with_reason(source, "U", spot, direction, _settings())
+
+
+def _real_exp(days_out):
+    return (date.today() + timedelta(days=days_out)).strftime("%Y-%m-%d")
+
+
+def test_reason_no_expirations():
+    assert _reason(_FakeSource(None, None)) == (None, "No option expirations listed")
+
+
+def test_reason_no_expiration_in_window():
+    assert _reason(_FakeSource([_real_exp(7), _real_exp(90)], None)) == (None, "No expiration 30-45 days out")
+
+
+def test_reason_chain_unavailable():
+    assert _reason(_FakeSource([_real_exp(35)], None)) == (None, "Options chain unavailable")
+
+
+def test_reason_nothing_fits_delta_or_liquidity():
+    chain = [_contract("put", 150.0, _real_exp(35))]  # deep ITM put, delta ~-1
+    assert _reason(_FakeSource([_real_exp(35)], chain)) == (None, "No put near 0.65 delta with enough open interest")
+
+
+def test_reason_no_puts_listed_in_window():
+    chain = [_contract("call", 95.0, _real_exp(35))]
+    assert _reason(_FakeSource([_real_exp(35)], chain)) == (None, "No puts listed 30-45 days out")
+
+
+def test_found_contract_has_no_reason():
+    chain = [_contract("put", 105.0, _real_exp(35), open_interest=300, volume=0)]
+    contract, reason = _reason(_FakeSource([_real_exp(35)], chain))
+    assert reason is None and contract["option_type"] == "put"

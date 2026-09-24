@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS latest_snapshot (
     fundamentals_pass INTEGER NOT NULL DEFAULT 0,
     pick_score REAL,
     data_stale INTEGER NOT NULL DEFAULT 0,
-    enriched INTEGER NOT NULL DEFAULT 0
+    enriched INTEGER NOT NULL DEFAULT 0,
+    contract_note TEXT          -- why no option idea was found this scan, if none
 );
 
 CREATE TABLE IF NOT EXISTS options_activity (
@@ -189,7 +190,8 @@ CREATE TABLE IF NOT EXISTS top_picks (
     theta REAL,
     open_interest REAL,
     breakeven REAL,
-    breakeven_move_pct REAL
+    breakeven_move_pct REAL,
+    contract_note TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_top_picks_scan_ts ON top_picks(scan_ts, rank);
 
