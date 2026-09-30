@@ -180,7 +180,7 @@ def _format_options_trade_email(qualifying: list[dict], trade_recs: dict[str, di
             f"{r['symbol']:<8}{c['option_type'].upper():<6}{c['strike']:>8.2f}  "
             f"{c['expiration']:<11}{c['days_to_expiration']:>6}d"
             f"{'$' + format(c['price'], '.2f'):>9}{c['delta']:>8.2f}"
-            f"{'$' + format(c['theta'], '.2f'):>13}"
+            f"{('$' + format(c['theta'], '.2f')) if is_valid(c.get('theta')) else 'n/a':>13}"
         )
     body = "\n".join(lines)
     body += (

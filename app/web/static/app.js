@@ -402,14 +402,20 @@ document.querySelectorAll("th[data-sort]").forEach((th) => {
   });
 });
 
+function optionsLabel(src) {
+  if (src === "moomoo") return "Moomoo";
+  if (src && src.startsWith("yahoo (")) return "Yahoo (moomoo unavailable)";
+  return "Yahoo";
+}
+
 async function refreshStatus() {
   try {
     const s = await fetchJSON("/api/status");
     const dot = el("status-dot");
     dot.className = "status-dot " + (s.market_open ? "open" : "closed");
     el("status-text").textContent = s.market_open
-      ? `Market open (${s.current_session}) \u00b7 ${s.tickers_tracked} tickers tracked`
-      : `Market closed \u00b7 ${s.tickers_tracked} tickers tracked`;
+      ? `Market open (${s.current_session}) \u00b7 ${s.tickers_tracked} tickers tracked \u00b7 Options data: ${optionsLabel(s.options_source)}`
+      : `Market closed \u00b7 ${s.tickers_tracked} tickers tracked \u00b7 Options data: ${optionsLabel(s.options_source)}`;
     el("status-time").textContent =
       new Date(s.server_time_et).toLocaleTimeString("en-US", { timeZone: "America/New_York" }) + " ET";
   } catch (e) {

@@ -3,10 +3,11 @@ app/scan/runner.py during a scan cycle."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app import db
 from app.config import load_watchlist
+from app.datasource.composite import options_provider_label
 from app.market_calendar import current_session, is_market_day, now_et
 
 router = APIRouter(prefix="/api")
@@ -203,7 +204,7 @@ def get_options_trades(limit: int = Query(50, ge=1, le=200)):
 
 
 @router.get("/status")
-def get_status():
+def get_status(request: Request):
     with db.cursor() as cur:
         cur.execute(
             """
@@ -224,6 +225,7 @@ def get_status():
         "current_session": current_session(),
         "server_time_et": now_et().isoformat(),
         "tickers_tracked": tracked,
+        "options_source": options_provider_label(getattr(request.app.state, "data_source", None)),
         "recent_runs": _rows_to_dicts(runs),
     }
 

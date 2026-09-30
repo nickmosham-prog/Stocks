@@ -108,6 +108,20 @@ scoring:
     min_open_interest: 50
     min_volume: 10
 
+# Where option chains for the option ideas (Top Picks calls, BUY/BREAKDOWN
+# trades) come from. "yahoo" (default) or "moomoo" - moomoo gives
+# exchange-grade Greeks/implied volatility but needs moomoo's OpenD app
+# running and logged in (see README "Using moomoo for options data").
+# Prices, fundamentals, news and the Options Flow tab always use Yahoo, and
+# Yahoo is the automatic fallback whenever moomoo is unreachable.
+# Tip: turn this on in config/secrets.yaml (git-ignored) rather than here,
+# so `git pull` never conflicts with your local change.
+options_source:
+  provider: yahoo
+  moomoo:
+    host: "127.0.0.1"
+    port: 11111
+
 # Top Picks: a ranked list of the best bullish swing-trade ideas (days to
 # weeks) with plain-English reasons, risks, and a suggested call option -
 # the main "what should I look at buying" output. See app/scan/picks.py.

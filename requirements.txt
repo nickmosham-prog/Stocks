@@ -5,6 +5,7 @@ fastapi>=0.110
 uvicorn>=0.29
 apscheduler>=3.10,<4.0
 pyyaml>=6.0
+moomoo-api>=9.0  # optional: only used when options_source.provider is moomoo
 tzdata; sys_platform == "win32"
 pytest>=7.0
 

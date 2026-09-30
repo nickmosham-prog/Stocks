@@ -272,6 +272,50 @@ broker before acting - the same disclaimer appears in the dashboard's
 Options Trades tab and in the options-trade alert email. Turn it off
 entirely via `scoring.options_strategy.enabled: false`.
 
+## Using moomoo for options data (optional)
+
+By default, option chains come from Yahoo. Yahoo's implied volatility is often
+wrong for in-the-money strikes, and it provides no Greeks. If you have a
+**moomoo** account, the screener can instead pull the option chains behind
+its option ideas (Top Picks calls, BUY/BREAKDOWN trades) from moomoo's
+official OpenAPI. Those chains come with moomoo's own delta, theta and implied
+volatility. Prices, fundamentals, news and the Options Flow tab still use
+Yahoo. **Whenever moomoo is unreachable, the app automatically falls back to
+Yahoo** and tries moomoo again 5 minutes later.
+
+1. **Install OpenD.** Download moomoo's **OpenD** gateway app for Mac from the
+   moomoo OpenAPI website, open it, and log in with your moomoo account.
+   Leave it running whenever the screener runs, since it's the bridge
+   between the screener and moomoo.
+2. **Install the moomoo package** (once), in the Stocks folder with the
+   virtual environment active:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. **Check it works:**
+   ```bash
+   python -m app.tools.check_moomoo AAPL
+   ```
+   It connects to OpenD and lists AAPL's option expirations. It then shows
+   one raw moomoo quote, and the option idea the screener would pick from
+   moomoo's data next to Yahoo's. If step 2 lists no expirations, your
+   account may not have US options quote rights in OpenAPI; moomoo grants
+   quote rights by account tier.
+4. **Switch it on** by adding these lines to `config/secrets.yaml`, your
+   local, git-ignored settings file:
+   ```yaml
+   options_source:
+     provider: moomoo
+   ```
+   (Putting it there instead of in `settings.yaml` means `git pull` never
+   conflicts with your change.)
+5. **Restart** `python main.py`. The startup log says whether it reached
+   OpenD, and the dashboard's status bar shows **"Options data: Moomoo"**,
+   or "Yahoo (moomoo unavailable)" if OpenD isn't reachable.
+
+If OpenD uses a different port than the default 11111, add
+`moomoo: {port: <your port>}` under `options_source` as well.
+
 ## Dashboard
 
 - **Top Picks** (default tab) - the ranked bullish ideas described above,
@@ -364,7 +408,8 @@ config/                  # settings.yaml, watchlist.yaml
 app/
   config.py, db.py, schema.sql, market_calendar.py
   scheduler.py            # pre-market/intraday/EOD jobs
-  datasource/             # yfinance calls, isolated behind an interface
+  datasource/             # Yahoo (yfinance) + optional moomoo options, behind one interface
+  tools/                  # check_moomoo diagnostic
   scan/                   # RVOL, breakout, options, news, alpha score
   web/                    # FastAPI API + static dashboard
 tests/                    # pytest unit tests

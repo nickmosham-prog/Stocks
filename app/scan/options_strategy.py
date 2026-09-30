@@ -65,6 +65,18 @@ def _parse_date(value) -> date | None:
         return None
 
 
+def _provider_greeks(contract: dict, option_type: str) -> dict | None:
+    """Greeks straight from the data provider (moomoo), which are computed
+    from live quotes rather than our simplified Black-Scholes estimate.
+    None when the provider didn't supply a usable delta."""
+    delta, theta = contract.get("provider_delta"), contract.get("provider_theta")
+    if not is_valid(delta) or delta == 0 or abs(delta) > 1:
+        return None
+    if option_type == "put" and delta > 0:  # some feeds report put delta unsigned
+        delta = -delta
+    return {"delta": delta, "theta": theta if is_valid(theta) else None}
+
+
 def _select(
     contracts: list[dict], spot_price: float, direction: str, today: date, settings, earnings_date=None
 ) -> tuple[dict | None, str | None]:
@@ -95,7 +107,9 @@ def _select(
         iv, iv_estimated = c.get("implied_volatility"), False
         if not _sane_iv(iv):
             iv, iv_estimated = fallback.get(c["expiration"]), True
-        greeks = compute_greeks(spot_price, c.get("strike"), dte, iv, option_type, rate)
+        greeks = _provider_greeks(c, option_type) or compute_greeks(
+            spot_price, c.get("strike"), dte, iv, option_type, rate
+        )
         if greeks is None or abs(greeks["delta"] - target_delta) > band:
             continue
         price = c.get("ask") or c.get("last_price")

@@ -11,7 +11,7 @@ import uvicorn
 
 from app import db
 from app.config import load_settings
-from app.datasource.yfinance_source import YFinanceSource
+from app.datasource.composite import CompositeSource, create_source
 from app.scheduler import bootstrap_if_needed, create_scheduler
 from app.web.server import create_app
 
@@ -34,7 +34,12 @@ def main() -> None:
 
     db.init_db()
 
-    source = YFinanceSource()
+    source = create_source(settings)
+    if isinstance(source, CompositeSource):
+        ok, message = source.options_client.check_connection()
+        source.last_options_provider = "moomoo" if ok else "yahoo (moomoo unavailable)"
+        log.info("moomoo options data: %s", message if ok else message + " - using Yahoo until it's reachable")
+        atexit.register(source.close)
     log.info("checking historical volume profile before starting scan loops...")
     bootstrap_if_needed(source)
 
@@ -43,7 +48,7 @@ def main() -> None:
     atexit.register(lambda: scheduler.shutdown(wait=False))
     log.info("scheduler started (pre-market/intraday scans + daily EOD refresh)")
 
-    app = create_app()
+    app = create_app(source)
     host = settings.get("app", "host", default="127.0.0.1")
     port = settings.get("app", "port", default=8000)
     log.info("starting dashboard on http://%s:%s", host, port)
