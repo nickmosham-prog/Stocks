@@ -331,7 +331,6 @@ If OpenD uses a different port than the default 11111, add
 - **Options Trades** - the current recommended contract per qualifying
   ticker (see **Options trade recommendations** above), with the same
   disclaimer shown in its alert email.
-- **News** - recent tagged headlines for enriched tickers.
 
 The Breakout column shows a small "held Xm" badge once a level break has
 lasted long enough to be marked confirmed (green), or just "Xm" while it's

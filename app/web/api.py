@@ -117,20 +117,6 @@ def get_ticker(symbol: str):
     }
 
 
-@router.get("/news")
-def get_news(symbol: str | None = None, limit: int = Query(50, ge=1, le=200)):
-    if symbol:
-        query = "SELECT * FROM news_items WHERE symbol = ? ORDER BY published_at DESC LIMIT ?"
-        params = (symbol.upper(), limit)
-    else:
-        query = "SELECT * FROM news_items ORDER BY published_at DESC LIMIT ?"
-        params = (limit,)
-    with db.cursor() as cur:
-        cur.execute(query, params)
-        rows = cur.fetchall()
-    return {"rows": _rows_to_dicts(rows)}
-
-
 @router.get("/options")
 def get_all_options(limit: int = Query(50, ge=1, le=200)):
     """Most recent flagged options activity across the whole watchlist,

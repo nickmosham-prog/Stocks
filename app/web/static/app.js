@@ -250,29 +250,6 @@ function renderOptions(rows) {
   });
 }
 
-function renderNews(rows) {
-  const list = el("news-list");
-  if (!rows.length) {
-    list.innerHTML = `<li class="empty">No news fetched yet.</li>`;
-    return;
-  }
-  list.innerHTML = rows
-    .map((n) => {
-      const tags = (n.tags || "")
-        .split(",")
-        .filter(Boolean)
-        .map((t) => `<span class="tag">${t.replace(/_/g, " ")}</span>`)
-        .join("");
-      return `
-      <li>
-        <a class="headline" href="${n.link}" target="_blank" rel="noopener">${n.symbol}: ${n.headline}</a>
-        <div class="meta">${n.publisher || ""} ${n.published_at ? "&middot; " + new Date(n.published_at).toLocaleString() : ""}</div>
-        ${tags ? `<div class="tags">${tags}</div>` : ""}
-      </li>`;
-    })
-    .join("");
-}
-
 async function openDrilldown(symbol) {
   const panel = el("drilldown");
   const body = el("drilldown-body");
@@ -387,7 +364,6 @@ function setActiveTab(tab) {
   el("table-view").hidden = !["all", "premarket", "regular"].includes(tab);
   el("options-view").hidden = tab !== "options";
   el("trades-view").hidden = tab !== "trades";
-  el("news-view").hidden = tab !== "news";
   refresh();
 }
 
@@ -440,9 +416,6 @@ async function refresh() {
   } else if (state.tab === "trades") {
     const data = await fetchJSON("/api/options-trades?limit=100");
     renderOptionsTrades(data.rows);
-  } else if (state.tab === "news") {
-    const data = await fetchJSON("/api/news?limit=50");
-    renderNews(data.rows);
   } else {
     const session = state.tab === "all" ? "all" : state.tab;
     const data = await fetchJSON(`/api/rankings?session=${session}&sort=${state.sort}&limit=100`);

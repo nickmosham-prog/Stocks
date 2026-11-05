@@ -393,10 +393,12 @@ def test_digest_with_no_picks_still_explains():
     assert "7 passed the basic" in body
 
 
-def test_digest_without_fresh_scan_says_so():
-    subject, body = alerts._format_picks_digest("10:00", [], None)
-    assert "no fresh scan data" in subject
-    assert "logs/stocks.log" in body
+def test_no_digest_sent_without_fresh_scan(monkeypatch):
+    monkeypatch.setattr(alerts, "load_settings", _fake_settings_for_digest)
+    monkeypatch.setattr(alerts, "_latest_pick_run", lambda now: (None, []))
+    monkeypatch.setattr(alerts, "_last_alert_time", lambda symbol, kind: None)
+    monkeypatch.setattr(alerts, "_send_email", lambda *a: (_ for _ in ()).throw(AssertionError("sent")))
+    assert alerts.send_picks_digest("15:00") is False
 
 
 def _fake_settings_for_digest(picks_enabled=True):

@@ -367,7 +367,7 @@ def _format_pick(pick: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_picks_digest(slot_label: str, picks: list[dict], run: dict | None) -> tuple[str, str]:
+def _format_picks_digest(slot_label: str, picks: list[dict], run: dict) -> tuple[str, str]:
     footer = (
         "\n\nHow picks are chosen: each one passed the fundamentals check (profitable,\n"
         "reasonable P/E, growing revenue), is above its 50-day average, and is up\n"
@@ -379,15 +379,6 @@ def _format_picks_digest(slot_label: str, picks: list[dict], run: dict | None) -
         "is acceptable, and decide your exit before you enter.\n"
         "Free/delayed data via Yahoo Finance. Not financial advice."
     )
-    if run is None:
-        subject = f"Top Picks {slot_label} ET: no fresh scan data"
-        body = (
-            f"No scan has completed in the last {DIGEST_MAX_SCAN_AGE_MINUTES} minutes, so there are\n"
-            "no current picks. The app is running, but scans may be failing (e.g. Yahoo\n"
-            "Finance rate-limiting). Check logs/stocks.log on your Mac."
-        )
-        return subject, body + footer
-
     scan_time = datetime.fromisoformat(run["scan_ts"]).strftime("%H:%M")
     if not picks:
         subject = f"Top Picks {slot_label} ET: no stock cleared the bar"
@@ -421,9 +412,10 @@ def _latest_pick_run(now: datetime) -> tuple[dict | None, list[dict]]:
 
 
 def send_picks_digest(slot_label: str, now: datetime | None = None) -> bool:
-    """Emails the latest Top Picks. Always sends something (even "no
-    picks") so a quiet inbox never leaves the user wondering whether the
-    system is working. At most once per slot per day. Returns True if sent."""
+    """Emails the latest Top Picks, including a short "no stock cleared the
+    bar" note on a weak day. Sends nothing when no scan ran recently (e.g. a
+    market holiday or failing scans). At most once per slot per day.
+    Returns True if sent."""
     settings = load_settings()
     if not settings.get("alerts", "enabled", default=False) or not settings.get("picks", "enabled", default=True):
         return False
@@ -438,6 +430,12 @@ def send_picks_digest(slot_label: str, now: datetime | None = None) -> bool:
         return False
 
     run, picks = _latest_pick_run(now)
+    if run is None:
+        log.warning(
+            "skipping Top Picks digest (%s): no scan completed in the last %d minutes",
+            slot_label, DIGEST_MAX_SCAN_AGE_MINUTES,
+        )
+        return False
     subject, body = _format_picks_digest(slot_label, picks, run)
     if not _send_email(email_cfg, subject, body):
         return False
