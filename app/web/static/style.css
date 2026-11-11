@@ -38,6 +38,7 @@ body {
 .status-dot.open { background: var(--green); }
 .status-dot.closed { background: var(--text-dim); }
 .status-sep { opacity: 0.5; }
+.status-warn { color: var(--red); font-weight: 600; }
 
 .tabs {
   display: flex;

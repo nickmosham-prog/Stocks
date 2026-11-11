@@ -102,8 +102,8 @@ def update_hold_state(
     `prev_holding_since`/`prev_direction` come from the ticker's previous
     latest_snapshot row (None if this is the first time we've scored it, or
     it wasn't broken last cycle). Same direction as last cycle -> keep
-    accumulating; direction changed, or the level is no longer broken ->
-    reset. Returns {holding_since, hold_minutes, confirmed} where
+    accumulating; direction changed, the level is no longer broken, or the
+    previous hold started on an earlier day -> reset. Returns {holding_since, hold_minutes, confirmed} where
     `confirmed` is computed by the caller against the configured threshold
     (kept out of this function so it stays a pure "how long has this held"
     calculation, easy to test independent of settings).
@@ -111,10 +111,14 @@ def update_hold_state(
     if not level_broken:
         return {"holding_since": None, "hold_minutes": None}
 
+    holding_since = now
     if prev_holding_since and prev_direction == direction:
-        holding_since = datetime.fromisoformat(prev_holding_since)
-    else:
-        holding_since = now
+        previous = datetime.fromisoformat(prev_holding_since)
+        # The level is yesterday's high/low, so it changes every day: a hold
+        # carried over from a previous day would count overnight hours and
+        # look "confirmed" the moment the market opens.
+        if previous.date() == now.date():
+            holding_since = previous
 
     hold_minutes = (now - holding_since).total_seconds() / 60.0
     return {"holding_since": holding_since.isoformat(), "hold_minutes": hold_minutes}

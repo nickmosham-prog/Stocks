@@ -43,6 +43,10 @@ session (9:30am-4:00pm ET), it:
    **Email alerts** below) - one summary email per cycle per tier, not one
    per ticker, with a per-symbol cooldown so a hot name doesn't spam you.
 
+A scan runs as soon as the app starts, then every 5 minutes. A breakout's
+"held" timer restarts each day, because the level it measures (yesterday's
+high or low) changes each day.
+
 Every night after the close, it rebuilds the historical volume baseline
 used for RVOL and refreshes prior-day OHLC/ATR for the breakout scorer.
 Fundamentals are refreshed once a day (they don't change intraday) rather
@@ -61,6 +65,12 @@ Then open **http://127.0.0.1:8000** in your browser. Leave the process
 running (e.g. in a terminal tab, `screen`/`tmux` session, or as a
 background service) and it will keep scanning Monday-Friday during market
 hours on its own - no manual steps needed day to day.
+
+If the app was not running after the last market close, it refreshes
+yesterday's prices at startup (a few minutes) so that "yesterday's high"
+and the day's change are measured against the right day. Scan history
+older than 30 days (`retention.days` in `config/settings.yaml`) is deleted
+automatically.
 
 On first launch it will spend a few minutes building the historical
 volume baseline before the first scan, since nothing has been fetched yet.
@@ -269,7 +279,7 @@ expiration instead of throwing the contract away.
 
 **This is not a trade instruction.** Verify pricing and Greeks with your
 broker before acting - the same disclaimer appears in the dashboard's
-Options Trades tab and in the options-trade alert email. Turn it off
+Signals tab and in the options-trade alert email. Turn it off
 entirely via `scoring.options_strategy.enabled: false`.
 
 ## Using moomoo for options data (optional)
@@ -320,17 +330,18 @@ If OpenD uses a different port than the default 11111, add
 
 - **Top Picks** (default tab) - the ranked bullish ideas described above,
   as cards with reasons, risks, and the suggested call option.
-- **Buy Signals** - only tickers currently meeting the BUY
-  or BREAKDOWN Setup criteria, with columns emphasizing *why*: direction,
-  Alpha Score, hold time, fundamentals status, and the recommended option
-  contract (if one was found).
-- **Top Alpha** - all tracked tickers ranked by Alpha Score.
-- **Pre-Market** / **Intraday** - ranked by session.
+- **Signals** - tickers currently meeting the BUY or BREAKDOWN Setup
+  criteria: direction, Alpha Score, hold time, fundamentals status, and the
+  option contract the screener would pick (strike, expiration, price,
+  delta, daily time decay), or the reason none was found.
+- **All Stocks** - every tracked ticker ranked by Alpha Score, with the
+  session (pre-market or regular) its numbers come from.
 - **Options Flow** - tickers with unusual options volume/open-interest,
   plus implied volatility (IV) per contract.
-- **Options Trades** - the current recommended contract per qualifying
-  ticker (see **Options trade recommendations** above), with the same
-  disclaimer shown in its alert email.
+
+The status bar at the top shows when the last scan finished and how many
+tickers failed. It turns red if the market is open and no scan has
+finished in 15 minutes, which means the app needs a look.
 
 The Breakout column shows a small "held Xm" badge once a level break has
 lasted long enough to be marked confirmed (green), or just "Xm" while it's

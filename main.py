@@ -9,7 +9,7 @@ import logging
 
 import uvicorn
 
-from app import db
+from app import db, maintenance
 from app.config import load_settings
 from app.datasource.composite import CompositeSource, create_source
 from app.scheduler import bootstrap_if_needed, create_scheduler
@@ -33,6 +33,7 @@ def main() -> None:
     log = logging.getLogger("main")
 
     db.init_db()
+    maintenance.prune_old_rows()
 
     source = create_source(settings)
     if isinstance(source, CompositeSource):

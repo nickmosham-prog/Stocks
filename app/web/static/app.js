@@ -30,6 +30,11 @@ function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
 
+// Only http(s) links are ever followed - anything else (e.g. javascript:) is dropped.
+function safeUrl(url) {
+  return /^https?:\/\//i.test(String(url ?? "")) ? esc(url) : "#";
+}
+
 function fmtEt(ts) {
   return new Date(ts).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }) + " ET";
 }
@@ -86,22 +91,31 @@ function fundamentalsBadge(r) {
 
 function compactContract(c) {
   if (!c) return "&mdash;";
-  return `${c.option_type.toUpperCase()} $${fmtNum(c.strike)} exp ${c.expiration} &middot; $${fmtNum(c.price)}`;
+  const greeks = [
+    c.delta === null ? "" : `delta ${fmtNum(c.delta)}`,
+    c.theta === null ? "" : `time decay $${fmtNum(Math.abs(c.theta))}/day`,
+  ]
+    .filter(Boolean)
+    .join(" &middot; ");
+  return `<div>${esc(c.option_type).toUpperCase()} $${fmtNum(c.strike)} exp ${esc(c.expiration)} (${c.days_to_expiration}d) &middot; $${fmtNum(c.price)}</div>${
+    greeks ? `<div class="contract-note">${greeks}</div>` : ""
+  }`;
 }
 
 function renderRankings(rows) {
   const tbody = el("rankings-body");
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">No scan data yet. The scheduler runs Mon-Fri during market hours - check back once the market opens, or see the status bar above.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">No scan data yet. Scans run Mon-Fri, 7:00am-4:00pm ET - check back once the market opens, or see the status bar above.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows
     .map(
       (r) => `
-    <tr class="clickable${signalRowClass(r)}" data-symbol="${r.symbol}">
-      <td data-label="Symbol" class="symbol-cell">${r.symbol}${signalBadge(r)}</td>
+    <tr class="clickable${signalRowClass(r)}" data-symbol="${esc(r.symbol)}">
+      <td data-label="Symbol" class="symbol-cell">${esc(r.symbol)}${signalBadge(r)}</td>
       <td data-label="Price">$${fmtNum(r.price)}</td>
-      <td data-label="Gap %" class="${signClass(r.gap_pct)}">${r.gap_pct === null ? "&mdash;" : fmtNum(r.gap_pct) + "%"}</td>
+      <td data-label="Session">${r.session === "premarket" ? "Pre-market" : "Regular"}</td>
+      <td data-label="Change %" class="${signClass(r.gap_pct)}">${r.gap_pct === null ? "&mdash;" : fmtNum(r.gap_pct) + "%"}</td>
       <td data-label="RVOL">${r.rvol === null ? "&mdash;" : fmtNum(r.rvol) + "x"}</td>
       <td data-label="Breakout">${scoreBar(r.breakout_score)}${holdBadge(r)}</td>
       <td data-label="Options">${r.options_score === null ? "&mdash;" : scoreBar(r.options_score)}</td>
@@ -171,7 +185,7 @@ function renderPicks(data) {
 function renderSignals(rows, tradesBySymbol) {
   const tbody = el("signals-body");
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty">No qualifying BUY or BREAKDOWN setups right now. These require a confirmed breakout (held, not just triggered) plus a high Alpha Score - and for BUY, a real-financials quality gate. Check the Top Alpha tab to see everything being tracked.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">No qualifying BUY or BREAKDOWN setups right now. These require a confirmed breakout (held, not just triggered) plus a high Alpha Score - and for BUY, a real-financials quality gate. Check the All Stocks tab to see everything being tracked.</td></tr>`;
     return;
   }
   tbody.innerHTML = rows
@@ -179,8 +193,8 @@ function renderSignals(rows, tradesBySymbol) {
       const direction = r.buy_signal ? "Bullish" : "Bearish";
       const directionClass = r.buy_signal ? "up" : "down";
       return `
-    <tr class="clickable${signalRowClass(r)}" data-symbol="${r.symbol}">
-      <td data-label="Symbol" class="symbol-cell">${r.symbol}${signalBadge(r)}</td>
+    <tr class="clickable${signalRowClass(r)}" data-symbol="${esc(r.symbol)}">
+      <td data-label="Symbol" class="symbol-cell">${esc(r.symbol)}${signalBadge(r)}</td>
       <td data-label="Direction" class="${directionClass}">${direction}</td>
       <td data-label="Alpha Score">${scoreBar(r.alpha_score)}</td>
       <td data-label="Hold Time">${holdBadge(r)}</td>
@@ -197,33 +211,6 @@ function renderSignals(rows, tradesBySymbol) {
   });
 }
 
-function renderOptionsTrades(rows) {
-  const tbody = el("trades-body");
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">No recommended contracts yet this session.</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = rows
-    .map(
-      (r) => `
-    <tr class="clickable" data-symbol="${r.symbol}">
-      <td data-label="Symbol">${r.symbol}</td>
-      <td data-label="Direction" class="${r.direction === "bullish" ? "up" : "down"}">${r.direction}</td>
-      <td data-label="Type" class="${r.option_type === "call" ? "up" : "down"}">${r.option_type}</td>
-      <td data-label="Strike">$${fmtNum(r.strike)}</td>
-      <td data-label="Expiration">${r.expiration}</td>
-      <td data-label="DTE">${r.days_to_expiration}d</td>
-      <td data-label="Price">$${fmtNum(r.price)}</td>
-      <td data-label="Delta">${fmtNum(r.delta)}</td>
-      <td data-label="Daily Theta">$${fmtNum(r.theta)}</td>
-    </tr>`
-    )
-    .join("");
-  tbody.querySelectorAll("tr[data-symbol]").forEach((tr) => {
-    tr.addEventListener("click", () => openDrilldown(tr.dataset.symbol));
-  });
-}
-
 function renderOptions(rows) {
   const tbody = el("options-body");
   if (!rows.length) {
@@ -233,9 +220,9 @@ function renderOptions(rows) {
   tbody.innerHTML = rows
     .map(
       (r) => `
-    <tr class="clickable" data-symbol="${r.symbol}">
-      <td data-label="Symbol">${r.symbol}</td>
-      <td data-label="Expiration">${r.expiration}</td>
+    <tr class="clickable" data-symbol="${esc(r.symbol)}">
+      <td data-label="Symbol">${esc(r.symbol)}</td>
+      <td data-label="Expiration">${esc(r.expiration)}</td>
       <td data-label="Type" class="${r.option_type === "call" ? "up" : "down"}">${r.option_type}</td>
       <td data-label="Strike">$${fmtNum(r.strike)}</td>
       <td data-label="Volume">${fmtVolume(r.volume)}</td>
@@ -327,7 +314,7 @@ async function openDrilldown(symbol) {
           data.news.length
             ? data.news
                 .slice(0, 5)
-                .map((n) => `<div class="metric-row" style="display:block"><a href="${n.link}" target="_blank" rel="noopener">${n.headline}</a></div>`)
+                .map((n) => `<div class="metric-row" style="display:block"><a href="${safeUrl(n.link)}" target="_blank" rel="noopener">${esc(n.headline)}</a></div>`)
                 .join("")
             : "<div>No recent headlines.</div>"
         }
@@ -361,9 +348,8 @@ function setActiveTab(tab) {
   document.querySelectorAll(".tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
   el("picks-view").hidden = tab !== "picks";
   el("signals-view").hidden = tab !== "signals";
-  el("table-view").hidden = !["all", "premarket", "regular"].includes(tab);
+  el("table-view").hidden = tab !== "all";
   el("options-view").hidden = tab !== "options";
-  el("trades-view").hidden = tab !== "trades";
   refresh();
 }
 
@@ -384,6 +370,24 @@ function optionsLabel(src) {
   return "Yahoo";
 }
 
+const SCAN_STALE_MINUTES = 15;
+
+function renderScanHealth(s) {
+  const node = el("status-scan");
+  const last = s.last_scan;
+  const ageMin = last ? (Date.parse(s.server_time_et) - Date.parse(last.finished_at)) / 60000 : null;
+  const stale = s.market_open && (ageMin === null || ageMin > SCAN_STALE_MINUTES);
+  node.className = stale ? "status-warn" : "";
+  if (!last) {
+    node.textContent = stale ? "No scan has finished yet" : "No scans yet";
+    return;
+  }
+  const failed = last.tickers_failed ? ` (${last.tickers_failed} of ${last.tickers_attempted} failed)` : "";
+  node.textContent = stale
+    ? `No scan in ${Math.round(ageMin)} min - check the Terminal window`
+    : `Last scan ${fmtEt(last.finished_at)}${failed}`;
+}
+
 async function refreshStatus() {
   try {
     const s = await fetchJSON("/api/status");
@@ -392,6 +396,7 @@ async function refreshStatus() {
     el("status-text").textContent = s.market_open
       ? `Market open (${s.current_session}) \u00b7 ${s.tickers_tracked} tickers tracked \u00b7 Options data: ${optionsLabel(s.options_source)}`
       : `Market closed \u00b7 ${s.tickers_tracked} tickers tracked \u00b7 Options data: ${optionsLabel(s.options_source)}`;
+    renderScanHealth(s);
     el("status-time").textContent =
       new Date(s.server_time_et).toLocaleTimeString("en-US", { timeZone: "America/New_York" }) + " ET";
   } catch (e) {
@@ -413,12 +418,8 @@ async function refresh() {
   } else if (state.tab === "options") {
     const data = await fetchJSON("/api/options?limit=50");
     renderOptions(data.rows);
-  } else if (state.tab === "trades") {
-    const data = await fetchJSON("/api/options-trades?limit=100");
-    renderOptionsTrades(data.rows);
   } else {
-    const session = state.tab === "all" ? "all" : state.tab;
-    const data = await fetchJSON(`/api/rankings?session=${session}&sort=${state.sort}&limit=100`);
+    const data = await fetchJSON(`/api/rankings?session=all&sort=${state.sort}&limit=500`);
     renderRankings(data.rows);
   }
   refreshStatus();

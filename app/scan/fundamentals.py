@@ -146,7 +146,7 @@ def _missing_picks_fields() -> bool:
 
 def has_fresh_fundamentals(symbol: str) -> bool:
     settings = load_settings()
-    refresh_hours = settings.get("scoring", "fundamentals", "refresh_hours", default=24)
+    refresh_hours = settings.get("scoring", "fundamentals", "refresh_hours", default=20)
     with db.cursor() as cur:
         cur.execute("SELECT fetched_at FROM fundamentals WHERE symbol = ?", (symbol,))
         row = cur.fetchone()

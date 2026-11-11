@@ -7,6 +7,7 @@ Python process as the web server (see main.py).
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -15,7 +16,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import load_settings, load_watchlist
 from app.datasource.base import DataSource
 from app.market_calendar import is_market_day, is_premarket_window, is_regular_window
-from app import alerts
+from app import alerts, maintenance
 from app.scan import fundamentals, runner, trend, volume_profile
 
 log = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ def _eod_job(source: DataSource) -> None:
     succeeded, failed = volume_profile.refresh_historical_data(source, symbols)
     log.info("EOD refresh complete: %d succeeded, %d failed", succeeded, failed)
     log.info("trend metrics refreshed for %d symbols", trend.refresh_all(symbols))
+    maintenance.prune_old_rows()
 
 
 def _fundamentals_job(source: DataSource) -> None:
@@ -62,9 +64,17 @@ def _fundamentals_job(source: DataSource) -> None:
     # same as how bootstrap_if_needed already reports without a scan_runs row.
 
 
-def _picks_digest_job(slot_label: str) -> None:
+def _picks_digest_job(slot_label: str, source: DataSource) -> None:
     if not is_market_day():
         return
+    if is_regular_window():
+        # The digest must never go out on stale data (e.g. right after
+        # startup or after the Mac wakes): scan first if nothing is fresh.
+        try:
+            if runner.ensure_fresh_scan(source, "regular", alerts.DIGEST_MAX_SCAN_AGE_MINUTES):
+                log.info("ran a scan for the %s Top Picks digest (no fresh scan was available)", slot_label)
+        except Exception:
+            log.exception("scan for the %s Top Picks digest failed", slot_label)
     try:
         alerts.send_picks_digest(slot_label)
     except Exception:
@@ -106,11 +116,16 @@ def create_scheduler(source: DataSource) -> BackgroundScheduler:
     fundamentals_time = settings.get("schedule", "fundamentals_refresh_time", default="17:00")
     fundamentals_hour, fundamentals_minute = fundamentals_time.split(":")
 
+    # next_run_time=now: scan as soon as the scheduler starts instead of
+    # waiting one full interval (each job checks its own session window).
+    now = datetime.now(tz=scheduler.timezone)
     scheduler.add_job(
-        _premarket_job, IntervalTrigger(minutes=premarket_minutes), args=[source], id="premarket_scan"
+        _premarket_job, IntervalTrigger(minutes=premarket_minutes), args=[source], id="premarket_scan",
+        next_run_time=now,
     )
     scheduler.add_job(
-        _intraday_job, IntervalTrigger(minutes=intraday_minutes), args=[source], id="intraday_scan"
+        _intraday_job, IntervalTrigger(minutes=intraday_minutes), args=[source], id="intraday_scan",
+        next_run_time=now,
     )
     scheduler.add_job(
         _eod_job,
@@ -130,7 +145,7 @@ def create_scheduler(source: DataSource) -> BackgroundScheduler:
             scheduler.add_job(
                 _picks_digest_job,
                 CronTrigger(day_of_week="mon-fri", hour=int(hour), minute=int(minute)),
-                args=[str(slot)],
+                args=[str(slot), source],
                 id=f"picks_digest_{hour}{minute}",
                 misfire_grace_time=1800,
                 coalesce=True,

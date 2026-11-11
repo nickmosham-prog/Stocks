@@ -6,8 +6,9 @@ persists everything and rolls up an alpha score per ticker.
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -124,9 +125,32 @@ def _enrich_symbol(source: DataSource, symbol: str) -> dict:
     return options_result
 
 
+# One scan at a time: the scheduled scans and a digest-triggered scan would
+# otherwise write the same snapshot rows concurrently.
+_scan_lock = threading.Lock()
+
+
 def run_scan(source: DataSource, session: str) -> dict:
     """Runs one scan cycle for `session` ('premarket' or 'regular'). Returns a
     small summary dict (also recorded in scan_runs)."""
+    with _scan_lock:
+        return _run_scan(source, session)
+
+
+def ensure_fresh_scan(source: DataSource, session: str, max_age_minutes: float) -> bool:
+    """Runs a scan now unless one recorded Top Picks within `max_age_minutes`
+    (waiting for any scan already in progress first). Returns True if it ran."""
+    with _scan_lock:
+        with db.cursor() as cur:
+            cur.execute("SELECT MAX(scan_ts) AS scan_ts FROM pick_runs")
+            latest = cur.fetchone()["scan_ts"]
+        if latest and now_et() - datetime.fromisoformat(latest) <= timedelta(minutes=max_age_minutes):
+            return False
+        _run_scan(source, session)
+        return True
+
+
+def _run_scan(source: DataSource, session: str) -> dict:
     settings = load_settings()
     symbols = load_watchlist()
     bucket_minutes = settings.get("volume_profile", "bucket_minutes", default=5)
@@ -349,7 +373,9 @@ def run_scan(source: DataSource, session: str) -> dict:
                     ),
                 )
 
-    if settings.get("picks", "enabled", default=True):
+    # With no rows at all (data source down, or a market holiday) there is
+    # nothing to rank - recording "0 picks" would read as a weak market.
+    if all_rows and settings.get("picks", "enabled", default=True):
         try:
             _record_top_picks(source, session, scan_ts, all_rows, pick_info, fundamentals_rows, trend_rows, settings)
         except Exception:

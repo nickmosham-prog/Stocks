@@ -22,6 +22,19 @@ def is_market_day(moment: dt.datetime | None = None) -> bool:
     return moment.weekday() < 5  # 0=Monday ... 4=Friday
 
 
+def last_market_close(moment: dt.datetime | None = None) -> dt.datetime:
+    """The most recent regular-session close at or before `moment`
+    (weekdays only - a holiday just looks like a normal close)."""
+    moment = moment or now_et()
+    _, close_time = session_window("regular")
+    day = moment.date()
+    if not (moment.weekday() < 5 and moment.timetz().replace(tzinfo=None) >= close_time):
+        day -= dt.timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= dt.timedelta(days=1)
+    return dt.datetime.combine(day, close_time, tzinfo=moment.tzinfo)
+
+
 def _parse_hhmm(value: str) -> dt.time:
     hour, minute = value.split(":")
     return dt.time(hour=int(hour), minute=int(minute))

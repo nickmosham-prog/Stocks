@@ -205,6 +205,14 @@ def get_status(request: Request):
         runs = cur.fetchall()
         cur.execute("SELECT COUNT(*) AS n FROM latest_snapshot")
         tracked = cur.fetchone()["n"]
+        cur.execute(
+            """
+            SELECT run_type, finished_at, tickers_attempted, tickers_failed FROM scan_runs
+            WHERE run_type IN ('premarket', 'intraday') AND finished_at IS NOT NULL
+            ORDER BY id DESC LIMIT 1
+            """
+        )
+        last_scan = cur.fetchone()
 
     return {
         "market_open": is_market_day() and current_session() is not None,
@@ -212,6 +220,7 @@ def get_status(request: Request):
         "server_time_et": now_et().isoformat(),
         "tickers_tracked": tracked,
         "options_source": options_provider_label(getattr(request.app.state, "data_source", None)),
+        "last_scan": dict(last_scan) if last_scan else None,
         "recent_runs": _rows_to_dicts(runs),
     }
 

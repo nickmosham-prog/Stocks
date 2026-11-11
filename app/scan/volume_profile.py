@@ -19,6 +19,7 @@ from app.market_calendar import (
     bucket_index,
     is_premarket_window,
     is_regular_window,
+    last_market_close,
     now_et,
     session_window,
 )
@@ -167,27 +168,25 @@ def refresh_historical_data(source: DataSource, symbols: list[str]) -> tuple[int
     return succeeded, failed
 
 
-def has_fresh_profile(symbol: str) -> bool:
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT updated_at FROM historical_volume_profile WHERE symbol = ? ORDER BY updated_at DESC LIMIT 1",
-            (symbol,),
-        )
-        row = cur.fetchone()
-    if row is None:
-        return False
-    updated_at = datetime.fromisoformat(row["updated_at"])
-    age_hours = (datetime.now(tz=timezone.utc) - updated_at).total_seconds() / 3600
-    return age_hours < 20  # refreshed within the last trading day
-
-
 def needs_bootstrap(symbols: list[str]) -> bool:
-    """True if fewer than half the watchlist has a fresh volume profile,
-    meaning the EOD refresh should run once synchronously before the
-    scan loops start (so day one works without a manual step)."""
+    """True if fewer than half the watchlist was refreshed since the most
+    recent market close, meaning the history refresh should run once
+    synchronously before the scan loops start.
+
+    "Since the last close" rather than "within N hours": yesterday's daily
+    bar only exists in a refresh made after yesterday's close, so an
+    hours-based rule could leave "the prior day" two days old (e.g. after
+    a late start one day and an early start the next)."""
     if not symbols:
         return False
-    fresh = sum(1 for symbol in symbols if has_fresh_profile(symbol))
+    cutoff = last_market_close().astimezone(timezone.utc)
+    with db.cursor() as cur:
+        cur.execute("SELECT symbol, MAX(updated_at) AS updated_at FROM historical_volume_profile GROUP BY symbol")
+        updated = {row["symbol"]: row["updated_at"] for row in cur.fetchall()}
+    fresh = sum(
+        1 for symbol in symbols
+        if updated.get(symbol) and datetime.fromisoformat(updated[symbol]) >= cutoff
+    )
     return fresh < len(symbols) / 2
 
 

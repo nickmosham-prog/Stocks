@@ -88,7 +88,7 @@ scoring:
     min_pe: 0        # effectively disabled by default (profitability already excludes negative-PE distress)
     max_pe: 60       # "not wildly overvalued" - raise this for growth-heavy watchlists
     require_revenue_growth: true
-    refresh_hours: 24   # minimum age before a symbol's fundamentals count as stale
+    refresh_hours: 20   # minimum age before a symbol's fundamentals count as stale (under 24 so a slightly earlier start the next day still refreshes)
 
   # Options trade recommendation engine: for a ticker meeting BUY Setup
   # (call) or breakdown_setup (put) criteria, pick one specific contract
@@ -121,6 +121,12 @@ options_source:
   moomoo:
     host: "127.0.0.1"
     port: 11111
+
+# How many days of scan history to keep. Older rows are deleted at startup
+# and after each close so the database doesn't grow forever. The Scorecard's
+# record of past picks is kept permanently and is not affected.
+retention:
+  days: 30
 
 # Top Picks: a ranked list of the best bullish swing-trade ideas (days to
 # weeks) with plain-English reasons, risks, and a suggested call option -
