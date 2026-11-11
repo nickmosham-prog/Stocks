@@ -96,6 +96,7 @@ def _fetch_and_evaluate(source: DataSource, symbol: str, settings) -> dict:
         "recommendation_mean": clean((fundamentals or {}).get("recommendation_mean")),
         "analyst_count": clean((fundamentals or {}).get("analyst_count")),
         "next_earnings_date": (fundamentals or {}).get("next_earnings_date"),
+        "sector": (fundamentals or {}).get("sector") or None,
     }
     return row
 
@@ -129,19 +130,21 @@ def refresh_all(source: DataSource, symbols: list[str]) -> tuple[int, int]:
 
 
 def _missing_picks_fields() -> bool:
-    """Rows fetched before the Top Picks upgrade have every new column NULL;
-    refetch rather than wait up to a day for the scheduled refresh."""
+    """Rows fetched before a Top Picks upgrade have its new columns NULL in
+    every row (analyst target, then sector); refetch rather than wait up to
+    a day for the scheduled refresh."""
     with db.cursor() as cur:
         cur.execute(
             """
             SELECT COUNT(*) AS total,
                    SUM(CASE WHEN profit_margin IS NOT NULL OR target_mean_price IS NOT NULL
-                            THEN 1 ELSE 0 END) AS enriched
+                            THEN 1 ELSE 0 END) AS enriched,
+                   SUM(CASE WHEN sector IS NOT NULL THEN 1 ELSE 0 END) AS with_sector
             FROM fundamentals
             """
         )
         row = cur.fetchone()
-    return bool(row["total"]) and not row["enriched"]
+    return bool(row["total"]) and not (row["enriched"] and row["with_sector"])
 
 
 def has_fresh_fundamentals(symbol: str) -> bool:

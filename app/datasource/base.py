@@ -61,7 +61,8 @@ class DataSource(ABC):
         """Snapshot of fundamentals used by the BUY Setup quality gate and
         Top Picks scoring: {net_income, trailing_eps, trailing_pe,
         revenue_growth_yoy, profit_margin, target_mean_price,
-        recommendation_mean, analyst_count, next_earnings_date (YYYY-MM-DD)}.
+        recommendation_mean, analyst_count, next_earnings_date (YYYY-MM-DD),
+        sector}.
         Any individual field may be None (not every ticker has every field
         populated) - callers must treat a missing field as "unknown", never
         as a failing value. Returns None only when the whole fetch failed

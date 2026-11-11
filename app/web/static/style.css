@@ -170,6 +170,12 @@ tr.breakdown-row.clickable:hover { background: #24120f; }
 .pick-score { margin-left: auto; min-width: 140px; }
 .pick-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--green); margin-top: 6px; }
 .pick-label.risk { color: var(--amber); }
+.pick-label.exit { color: var(--accent); margin-top: 10px; }
+.pick-exit { margin: 4px 0 0; padding-left: 18px; line-height: 1.5; }
+.pick-sector { background: #1c2130; color: var(--text-dim); font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+.market-banner { border: 1px solid var(--border); border-left: 3px solid var(--green); border-radius: 8px; background: var(--bg-panel); padding: 10px 14px; font-size: 13px; }
+.market-banner.caution { border-left-color: var(--amber); }
+.market-banner.weak { border-left-color: var(--red); }
 .pick-reasons, .pick-risks { margin: 4px 0 6px; padding-left: 18px; line-height: 1.5; }
 .pick-risks { color: var(--text-dim); }
 .pick-option { margin-top: 8px; padding: 8px 10px; background: #0f1a14; border: 1px solid #1d3a2a; border-radius: 6px; }

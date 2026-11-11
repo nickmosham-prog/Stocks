@@ -8,8 +8,10 @@ refresh and at startup - trend doesn't change meaningfully intraday.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 from app import db
@@ -20,6 +22,18 @@ log = logging.getLogger(__name__)
 BENCHMARK = "SPY"
 TRADING_DAYS_3M = 63
 TRADING_DAYS_52W = 252
+HV_WINDOW = 30
+HV_MIN_RETURNS = 20
+
+
+def realized_volatility(closes: pd.Series, window: int = HV_WINDOW) -> float | None:
+    """Annualized volatility of the last `window` daily returns, as a
+    fraction (0.35 = the stock has been moving at a 35%-a-year pace)."""
+    returns = np.log(closes / closes.shift(1)).dropna().iloc[-window:]
+    returns = returns[np.isfinite(returns)]
+    if len(returns) < HV_MIN_RETURNS:
+        return None
+    return clean(float(returns.std(ddof=1) * math.sqrt(TRADING_DAYS_52W)))
 
 
 def _return_pct(closes: pd.Series, lookback: int) -> float | None:
@@ -40,6 +54,7 @@ def compute_trend(closes: pd.Series, spy_closes: pd.Series | None = None) -> dic
         return {
             "last_close": None, "sma50": None, "sma200": None, "high_52w": None,
             "pct_from_high": None, "ret_3m_pct": None, "rs_3m_pct": None, "history_days": 0,
+            "hv30": None,
         }
 
     last = clean(float(closes.iloc[-1]))
@@ -64,6 +79,7 @@ def compute_trend(closes: pd.Series, spy_closes: pd.Series | None = None) -> dic
         "ret_3m_pct": ret_3m,
         "rs_3m_pct": rs_3m,
         "history_days": n,
+        "hv30": realized_volatility(closes),
     }
 
 

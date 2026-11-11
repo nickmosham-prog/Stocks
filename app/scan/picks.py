@@ -121,11 +121,30 @@ def options_score(row: dict) -> float | None:
     ])
 
 
-def is_eligible(row: dict, trend: dict | None) -> bool:
+def earnings_within_days(fund: dict | None, today: date | None = None) -> int | None:
+    """Days until the next earnings date (0 = today), or None if there is
+    no upcoming date on record."""
+    earnings = _parse_date((fund or {}).get("next_earnings_date"))
+    if earnings is None:
+        return None
+    days = (earnings - (today or date.today())).days
+    return days if days >= 0 else None
+
+
+def is_eligible(
+    row: dict, trend: dict | None, fund: dict | None = None, today: date | None = None, settings=None
+) -> bool:
     """Hard filters before scoring counts: real financials pass the quality
     gate (also excludes ETFs, which have no earnings), the stock is in an
-    uptrend (above its 50-day average), and it isn't falling today."""
+    uptrend (above its 50-day average), it isn't falling today, and it
+    doesn't report earnings in the next few days (a coin-flip event that a
+    swing idea shouldn't be entered right in front of)."""
     if row.get("fundamentals_status") != "pass":
+        return False
+    settings = settings or load_settings()
+    window = settings.get("picks", "skip_if_earnings_within_days", default=3)
+    days_to_earnings = earnings_within_days(fund, today)
+    if is_valid(window) and window >= 0 and days_to_earnings is not None and days_to_earnings <= window:
         return False
     price, change = row.get("price"), row.get("gap_pct")
     sma50 = (trend or {}).get("sma50")
@@ -149,21 +168,38 @@ def score_row(row: dict, fund: dict | None, trend: dict | None, settings=None) -
     pick = _weighted_average([(components[name], weights.get(name, 0.0)) for name in COMPONENTS])
     return {
         "pick_score": pick,
-        "eligible": is_eligible(row, trend),
+        "eligible": is_eligible(row, trend, fund, settings=settings),
         **{f"{name}_score": components[name] for name in COMPONENTS},
     }
 
 
-def rank_picks(candidates: list[dict], count: int = 5, min_score: float = 55) -> list[dict]:
-    """candidates: dicts with at least `eligible` and `pick_score`. Returns
-    the top `count` eligible ones clearing `min_score`, best first - fewer
-    (possibly none) on a weak day rather than padding with weak ideas."""
+def rank_picks(
+    candidates: list[dict], count: int = 5, min_score: float = 55, max_per_sector: int | None = None
+) -> list[dict]:
+    """candidates: dicts with at least `eligible` and `pick_score` (and
+    optionally `sector`). Returns the top `count` eligible ones clearing
+    `min_score`, best first - fewer (possibly none) on a weak day rather
+    than padding with weak ideas. With `max_per_sector`, a sector that is
+    already full is skipped in favour of the next-best idea elsewhere, so
+    one hot industry can't fill the whole list; candidates with no known
+    sector are never limited."""
     qualifying = [
         c for c in candidates
         if c.get("eligible") and is_valid(c.get("pick_score")) and c["pick_score"] >= min_score
     ]
     qualifying.sort(key=lambda c: c["pick_score"], reverse=True)
-    return qualifying[:count]
+    chosen: list[dict] = []
+    per_sector: dict[str, int] = {}
+    for candidate in qualifying:
+        if len(chosen) >= count:
+            break
+        sector = candidate.get("sector")
+        if max_per_sector and sector:
+            if per_sector.get(sector, 0) >= max_per_sector:
+                continue
+            per_sector[sector] = per_sector.get(sector, 0) + 1
+        chosen.append(candidate)
+    return chosen
 
 
 def _rating_label(rec: float) -> str:
@@ -195,6 +231,22 @@ def breakeven(contract: dict | None, spot: float | None) -> tuple[float | None, 
     return clean(level), move
 
 
+def expensive_options(contract: dict | None, trend: dict | None, settings=None) -> tuple[float, float] | None:
+    """(implied volatility, actual recent volatility) when the option idea
+    is priced for much bigger moves than the stock has been making, else
+    None. Both are yearly fractions (0.9 = 90%)."""
+    iv = (contract or {}).get("implied_volatility")
+    hv = (trend or {}).get("hv30")
+    # Under ~5% a year isn't a real reading for a traded stock (halted, or
+    # too little history) - comparing against it would flag everything.
+    if not (is_valid(iv) and is_valid(hv) and hv >= 0.05):
+        return None
+    settings = settings or load_settings()
+    ratio = settings.get("picks", "expensive_iv_ratio", default=1.3)
+    min_gap = settings.get("picks", "expensive_iv_min_gap_pts", default=10) / 100.0
+    return (iv, hv) if iv >= ratio * hv and iv - hv >= min_gap else None
+
+
 def build_thesis(
     row: dict,
     fund: dict | None,
@@ -202,8 +254,10 @@ def build_thesis(
     contract: dict | None = None,
     today: date | None = None,
     settings=None,
+    market: dict | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Plain-English (reasons, risks) from the actual numbers."""
+    """Plain-English (reasons, risks) from the actual numbers. `market` is
+    the market_regime.assess() result, if any."""
     settings = settings or load_settings()
     fund, trend = fund or {}, trend or {}
     today = today or date.today()
@@ -271,6 +325,8 @@ def build_thesis(
         reasons.append(f"Options traders leaning bullish: call volume {cpr:.1f}x put volume")
 
     # --- risks ---
+    if market and market.get("regime") in ("caution", "weak") and market.get("note"):
+        risks.append(market["note"])
     earnings = _parse_date(fund.get("next_earnings_date"))
     horizon_end = _parse_date(contract.get("expiration")) if contract else None
     horizon_end = horizon_end or date.fromordinal(today.toordinal() + 45)
@@ -288,6 +344,13 @@ def build_thesis(
         risks.append("Still below its 200-day average (longer-term trend not yet repaired)")
     if upside is not None and upside < 0:
         risks.append(f"Already {abs(upside):.0f}% above analysts' average target")
+    expensive = expensive_options(contract, trend, settings)
+    if expensive:
+        risks.append(
+            f"Options are expensive: priced for {expensive[0] * 100:.0f}% yearly swings, but the stock has "
+            f"actually been moving at about {expensive[1] * 100:.0f}% - the call can lose value even if "
+            "the stock rises slowly"
+        )
     if contract and is_valid(contract.get("open_interest")) and contract["open_interest"] < 200:
         risks.append(
             f"Thin options liquidity (open interest {contract['open_interest']:.0f}) - use a limit order"

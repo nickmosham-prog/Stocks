@@ -341,6 +341,7 @@ def _format_pick(pick: dict) -> str:
     if risks:
         lines.append("  Risks:")
         lines.extend(f"   - {r}" for r in risks)
+    exit_steps = [r for r in (pick.get("exit_plan") or "").split("\n") if r]
 
     if pick.get("contract_symbol") and is_valid(pick.get("strike")) and is_valid(pick.get("option_price")):
         per_contract = pick["option_price"] * 100
@@ -364,15 +365,20 @@ def _format_pick(pick: dict) -> str:
     else:
         reason = pick.get("contract_note") or "no liquid 30-45 day call near 0.65 delta"
         lines.append(f"  Option idea: none ({reason}) - stock-only idea")
+    if exit_steps:
+        lines.append("  Exit plan (decide before you enter):")
+        lines.extend(f"   - {step}" for step in exit_steps)
     return "\n".join(lines)
 
 
 def _format_picks_digest(slot_label: str, picks: list[dict], run: dict) -> tuple[str, str]:
     footer = (
         "\n\nHow picks are chosen: each one passed the fundamentals check (profitable,\n"
-        "reasonable P/E, growing revenue), is above its 50-day average, and is up\n"
-        "today; they are ranked by trend, momentum, business quality, analyst\n"
-        "targets and options activity. Swing-trade horizon: days to weeks.\n\n"
+        "reasonable P/E, growing revenue), is above its 50-day average, is up\n"
+        "today, and has no earnings report in the next few days; they are ranked\n"
+        "by trend, momentum, business quality, analyst targets and options\n"
+        "activity, with at most two from any one sector. Swing-trade horizon:\n"
+        "days to weeks.\n\n"
         "Screening ideas, not trade instructions. Option prices/Greeks come from\n"
         "free delayed data and a simplified Black-Scholes model - check live\n"
         "quotes with your broker, size positions so a total loss of the premium\n"
@@ -380,9 +386,10 @@ def _format_picks_digest(slot_label: str, picks: list[dict], run: dict) -> tuple
         "Free/delayed data via Yahoo Finance. Not financial advice."
     )
     scan_time = datetime.fromisoformat(run["scan_ts"]).strftime("%H:%M")
+    market_line = f"{run['market_note']}\n\n" if run.get("market_note") else ""
     if not picks:
         subject = f"Top Picks {slot_label} ET: no stock cleared the bar"
-        body = (
+        body = market_line + (
             f"No stock cleared the Top Picks bar at the {scan_time} ET scan "
             f"({run.get('candidates') or 0} passed the basic\n"
             "filters, none scored high enough). That usually means a weak or choppy\n"
@@ -392,7 +399,7 @@ def _format_picks_digest(slot_label: str, picks: list[dict], run: dict) -> tuple
         return subject, body + footer
 
     subject = f"Top Picks {slot_label} ET: " + ", ".join(p["symbol"] for p in picks)
-    body = f"Top Picks as of the {scan_time} ET scan - ranked bullish swing ideas.\n\n"
+    body = f"Top Picks as of the {scan_time} ET scan - ranked bullish swing ideas.\n\n" + market_line
     body += "\n\n".join(_format_pick(p) for p in picks)
     return subject, body + footer
 

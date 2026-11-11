@@ -142,6 +142,30 @@ picks:
   daily_history_days: 400  # calendar days of daily bars kept (covers the 200-day average + 52-week high)
   digest_times: ["10:00", "15:00"]
   max_extension_above_sma50_pct: 15   # flagged as a risk (not excluded) above this
+  max_per_sector: 2                   # at most this many picks from one industry sector (0 = no limit)
+  skip_if_earnings_within_days: 3     # never pick a stock reporting earnings this soon (-1 = don't filter)
+  # "Options are expensive" risk flag: the option's implied volatility is at
+  # least this many times the stock's actual recent volatility, AND at least
+  # this many percentage points above it.
+  expensive_iv_ratio: 1.3
+  expensive_iv_min_gap_pts: 10
+  # Exit plan shown with every pick. ATR = the stock's average daily range
+  # over 14 days, so a volatile stock gets a wider stop than a quiet one.
+  exit_plan:
+    stop_atr_multiple: 1.5            # stop = price - 1.5 x ATR
+    target_atr_multiple: 3.0          # target = price + 3 x ATR (2:1 reward to risk)
+    option_take_profit_pct: 50        # take profit when the option is up this much
+    option_stop_loss_pct: 40          # cut the loss when the option is down this much
+    exit_days_before_expiration: 14   # be out of the option by then (time decay speeds up)
+  # Market backdrop, judged from the S&P 500 ETF (SPY). "Caution" (below its
+  # 50-day average, or down this much today) adds a warning to each pick.
+  # "Weak" (below its 200-day average, or below the 50-day and falling)
+  # raises the score floor and limits the number of picks.
+  market_regime:
+    enabled: true
+    caution_day_drop_pct: 1.0
+    weak_min_score_bonus: 10
+    weak_max_picks: 3
   weights:
     trend: 0.30      # above 50/200-day averages, near 52-week high, beating the S&P 500
     momentum: 0.25   # up today on above-normal volume, breaking yesterday's high

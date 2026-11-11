@@ -76,6 +76,19 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "top_picks": {
         "contract_note": "TEXT",
+        "sector": "TEXT",
+        "stop_price": "REAL",
+        "target_price": "REAL",
+        "exit_plan": "TEXT",
+        "implied_volatility": "REAL",
+        "hv30": "REAL",
+    },
+    "pick_runs": {
+        "market_regime": "TEXT",
+        "market_note": "TEXT",
+    },
+    "trend_metrics": {
+        "hv30": "REAL",
     },
     "fundamentals": {
         "profit_margin": "REAL",
@@ -83,6 +96,7 @@ _COLUMN_MIGRATIONS: dict[str, dict[str, str]] = {
         "recommendation_mean": "REAL",
         "analyst_count": "INTEGER",
         "next_earnings_date": "TEXT",
+        "sector": "TEXT",
     },
     "options_activity": {
         "implied_volatility": "REAL",

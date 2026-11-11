@@ -142,8 +142,21 @@ function pickOptionLine(p) {
       <div><strong>Option idea: CALL $${fmtNum(p.strike)} exp ${esc(p.expiration)}</strong> (${p.days_to_expiration} days)
         &middot; ~$${fmtNum(p.option_price)}/share${perContract === null ? "" : ` (~$${perContract.toLocaleString()} per contract)`}</div>
       <div class="pick-option-detail">delta ${fmtNum(p.delta)} &middot; time decay ~$${p.theta === null ? "&mdash;" : fmtNum(Math.abs(p.theta))}/share per day
-        &middot; breakeven $${fmtNum(p.breakeven)} at expiration${move}</div>
+        &middot; breakeven $${fmtNum(p.breakeven)} at expiration${move}${volatilityNote(p)}</div>
     </div>`;
+}
+
+// "priced for X% yearly swings vs Y% actual" - how expensive the option is
+// relative to how much the stock has really been moving.
+function volatilityNote(p) {
+  if (p.implied_volatility === null || p.implied_volatility === undefined) return "";
+  const actual = p.hv30 === null || p.hv30 === undefined ? "" : ` vs ${fmtPct(p.hv30)} actual`;
+  return ` &middot; implied volatility ${fmtPct(p.implied_volatility)}${actual}`;
+}
+
+function marketBanner(run) {
+  if (!run || !run.market_note) return "";
+  return `<div class="market-banner ${esc(run.market_regime)}">${esc(run.market_note)}</div>`;
 }
 
 function renderPicks(data) {
@@ -154,26 +167,30 @@ function renderPicks(data) {
     return;
   }
   if (!data.rows.length) {
-    list.innerHTML = `<div class="empty">No stock cleared the bar at the ${fmtEt(run.scan_ts)} scan (${run.candidates || 0} passed the basic filters, none scored high enough). On a weak or choppy day, no pick is the right answer. Updates every 5 minutes.</div>`;
+    list.innerHTML = `${marketBanner(run)}<div class="empty">No stock cleared the bar at the ${fmtEt(run.scan_ts)} scan (${run.candidates || 0} passed the basic filters, none scored high enough). On a weak or choppy day, no pick is the right answer. Updates every 5 minutes.</div>`;
     return;
   }
   list.innerHTML =
+    marketBanner(run) +
     `<div class="picks-updated">As of the ${fmtEt(run.scan_ts)} scan</div>` +
     data.rows
       .map((p) => {
         const reasons = (p.reasons || "").split("\n").filter(Boolean);
         const risks = (p.risks || "").split("\n").filter(Boolean);
+        const exitSteps = (p.exit_plan || "").split("\n").filter(Boolean);
         return `
       <div class="pick-card" data-symbol="${esc(p.symbol)}">
         <div class="pick-head">
           <span class="pick-rank">#${p.rank}</span>
           <span class="pick-symbol">${esc(p.symbol)}</span>
+          ${p.sector ? `<span class="pick-sector">${esc(p.sector)}</span>` : ""}
           <span class="pick-price">$${fmtNum(p.price)}</span>
           <span class="pick-score">${scoreBar(p.pick_score)}</span>
         </div>
         ${reasons.length ? `<div class="pick-label">Why</div><ul class="pick-reasons">${reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
         ${risks.length ? `<div class="pick-label risk">Risks</div><ul class="pick-risks">${risks.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
         ${pickOptionLine(p)}
+        ${exitSteps.length ? `<div class="pick-label exit">Exit plan &mdash; decide before you enter</div><ul class="pick-exit">${exitSteps.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
       </div>`;
       })
       .join("");

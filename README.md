@@ -167,12 +167,20 @@ to weeks), each with plain-English reasons, risks, and a suggested call
 option. It is shown on the dashboard's default **Top Picks** tab (updated
 every scan) and emailed as a digest at **10:00 and 15:00 ET** on weekdays.
 
-**Who can be picked** - all three must be true:
+**Who can be picked** - all four must be true:
 - passes the **fundamentals check** (profitable, reasonable P/E, growing
   revenue - see below). This also excludes ETFs.
 - is **above its 50-day moving average** (in an uptrend)
 - is **up on the day** - a stock falling on heavy volume (like a news
   crash) can never be a pick
+- has **no earnings report in the next 3 days**
+  (`picks.skip_if_earnings_within_days`). Earnings are a coin flip that a
+  swing idea shouldn't be entered right in front of. If Yahoo has no
+  earnings date for a stock, this check can't apply.
+
+At most **2 picks come from the same sector** (`picks.max_per_sector`), so
+one hot industry can't fill the whole list; the next-best idea from
+another sector takes the place.
 
 **How they're ranked** - a 0-100 **Pick Score** blending:
 | Component | Weight | What scores well |
@@ -188,6 +196,29 @@ weak or choppy day can produce fewer than 5 picks, or none. The digest still
 arrives on those days and says so, so a quiet inbox never leaves you
 wondering whether the app is running.
 
+**Market backdrop.** Each scan also judges the overall market from the
+S&P 500 ETF (SPY), shown as a banner on the Top Picks tab and the first
+line of the digest:
+- **Healthy** - SPY is above its 50- and 200-day averages and not down more
+  than 1% today.
+- **Caution** - SPY is below its 50-day average, or down more than 1%
+  today. Every pick carries a warning.
+- **Weak** - SPY is below its 200-day average, or below its 50-day and
+  down more than 1%. The score floor rises by 10 and picks are capped at 3,
+  because call ideas on single stocks work worse in a falling market.
+
+**Exit plan.** Every pick comes with levels to decide on before entering:
+- a **stop** 1.5 x ATR below the price and a **target** 3 x ATR above it
+  (ATR is the stock's average daily range over 14 days, so a volatile
+  stock gets a wider stop; the target is twice as far as the stop)
+- for the option: take profit at +50%, cut the loss at -40%, and be out
+  14 days before expiration, when time decay speeds up
+- a rough, delta-based estimate of what the option would be worth at the
+  stop and at the target
+
+These are rules of thumb, not predictions, and all are adjustable under
+`picks.exit_plan`.
+
 **Each pick's option idea** uses the same 30-45 day, ~0.65 delta call
 selection described in **Options trade recommendations** below. The idea
 includes the approximate cost per contract (100 shares), the daily time
@@ -195,10 +226,14 @@ decay, and the **breakeven price at expiration** (strike + premium) with the
 % move needed to get there. The risks list flags **earnings before the
 option expires**, since options often lose value right after earnings even
 when the stock moves your way. It also flags a stock stretched far above its
-50-day average, and thin options liquidity.
+50-day average, thin options liquidity, and **expensive options**: when the
+option's implied volatility is at least 1.3 times the stock's actual
+volatility over the last 30 days (and at least 10 points above it), the
+call can lose value even if the stock rises slowly.
 
 Everything is tunable under `picks:` in `config/settings.yaml` (count, score
-floor, digest times, component weights). These are screening ideas, not
+floor, digest times, component weights, sector limit, earnings window,
+exit plan, market backdrop). These are screening ideas, not
 trade instructions: check live quotes with your broker, size positions so
 losing the whole option premium is acceptable, and decide your exit before
 you enter.

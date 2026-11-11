@@ -137,7 +137,8 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     target_mean_price REAL,
     recommendation_mean REAL,
     analyst_count INTEGER,
-    next_earnings_date TEXT
+    next_earnings_date TEXT,
+    sector TEXT
 );
 
 -- Daily trend snapshot per symbol, computed from daily_ohlc after each EOD
@@ -152,7 +153,8 @@ CREATE TABLE IF NOT EXISTS trend_metrics (
     ret_3m_pct REAL,
     rs_3m_pct REAL,
     history_days INTEGER,
-    computed_at TEXT NOT NULL
+    computed_at TEXT NOT NULL,
+    hv30 REAL                   -- annualized volatility of the last 30 daily returns (0.35 = 35%)
 );
 
 -- One row per scan cycle that evaluated Top Picks, so "the latest scan
@@ -161,7 +163,9 @@ CREATE TABLE IF NOT EXISTS pick_runs (
     scan_ts TEXT PRIMARY KEY,
     session TEXT,
     candidates INTEGER,
-    picks_count INTEGER
+    picks_count INTEGER,
+    market_regime TEXT,         -- healthy / caution / weak / unknown
+    market_note TEXT
 );
 
 -- Ranked Top Picks per scan cycle: the stock, why it was picked, its
@@ -191,7 +195,13 @@ CREATE TABLE IF NOT EXISTS top_picks (
     open_interest REAL,
     breakeven REAL,
     breakeven_move_pct REAL,
-    contract_note TEXT
+    contract_note TEXT,
+    sector TEXT,
+    stop_price REAL,
+    target_price REAL,
+    exit_plan TEXT,             -- newline-separated plain-English steps
+    implied_volatility REAL,
+    hv30 REAL
 );
 CREATE INDEX IF NOT EXISTS idx_top_picks_scan_ts ON top_picks(scan_ts, rank);
 

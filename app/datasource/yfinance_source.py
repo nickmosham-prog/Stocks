@@ -229,6 +229,7 @@ class YFinanceSource(DataSource):
             "recommendation_mean": info.get("recommendationMean"),
             "analyst_count": info.get("numberOfAnalystOpinions"),
             "next_earnings_date": _earnings_date(info),
+            "sector": info.get("sector"),
         }
 
     def _revenue_growth_from_quarterly(self, ticker) -> float | None:

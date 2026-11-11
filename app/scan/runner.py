@@ -23,6 +23,8 @@ from app.scan import (
     breakdown_setup,
     breakout,
     buy_setup,
+    exit_plan,
+    market_regime,
     news,
     options_flow,
     options_strategy,
@@ -112,6 +114,7 @@ def _score_symbol(symbol: str, bars: pd.DataFrame, session: str, bucket_minutes:
         "rvol": rv,
         "rvol_score": rv_score,
         "prelim_score": prelim,
+        "atr14": prior.get("atr14") if prior else None,
         **b,
     }
 
@@ -377,7 +380,11 @@ def _run_scan(source: DataSource, session: str) -> dict:
     # nothing to rank - recording "0 picks" would read as a weak market.
     if all_rows and settings.get("picks", "enabled", default=True):
         try:
-            _record_top_picks(source, session, scan_ts, all_rows, pick_info, fundamentals_rows, trend_rows, settings)
+            atr_by_symbol = {symbol: data.get("atr14") for symbol, data in prelim.items()}
+            _record_top_picks(
+                source, session, scan_ts, all_rows, pick_info, fundamentals_rows, trend_rows, settings,
+                atr_by_symbol,
+            )
         except Exception:
             log.exception("top picks selection failed")
 
@@ -431,16 +438,32 @@ def _record_top_picks(
     fundamentals_rows: dict[str, dict],
     trend_rows: dict[str, dict],
     settings,
+    atr_by_symbol: dict[str, float | None] | None = None,
 ) -> list[dict]:
-    """Ranks this cycle's Top Picks, attaches a call contract + reasons to
-    each, and persists them (plus a pick_runs row, so an empty result is
-    distinguishable from "no scan ran")."""
+    """Ranks this cycle's Top Picks, attaches a call contract, reasons,
+    risks and an exit plan to each, and persists them (plus a pick_runs
+    row, so an empty result is distinguishable from "no scan ran")."""
+    atr_by_symbol = atr_by_symbol or {}
     rows_by_symbol = {row["symbol"]: row for row in all_rows}
-    candidates = [{"symbol": symbol, **info} for symbol, info in pick_info.items()]
+    market = market_regime.assess(
+        rows_by_symbol.get(market_regime.BENCHMARK),
+        trend_rows.get(market_regime.BENCHMARK),
+        rows_by_symbol.get(market_regime.SECONDARY),
+        settings,
+    )
+    count, min_score = market_regime.adjust_limits(
+        market["regime"],
+        settings.get("picks", "count", default=5),
+        settings.get("picks", "min_score", default=55),
+        settings,
+    )
+    candidates = [
+        {"symbol": symbol, "sector": fundamentals_rows.get(symbol, {}).get("sector"), **info}
+        for symbol, info in pick_info.items()
+    ]
     ranked = picks.rank_picks(
-        candidates,
-        count=settings.get("picks", "count", default=5),
-        min_score=settings.get("picks", "min_score", default=55),
+        candidates, count=count, min_score=min_score,
+        max_per_sector=settings.get("picks", "max_per_sector", default=2),
     )
 
     records = []
@@ -455,8 +478,9 @@ def _record_top_picks(
             )
         level, move = picks.breakeven(contract, row["price"])
         reasons, risks = picks.build_thesis(
-            row, fundamentals_rows.get(symbol), trend_rows.get(symbol), contract, settings=settings
+            row, fundamentals_rows.get(symbol), trend_rows.get(symbol), contract, settings=settings, market=market
         )
+        plan = exit_plan.build_exit_plan(row["price"], atr_by_symbol.get(symbol), contract, settings)
         contract = contract or {}
         records.append(
             {
@@ -484,13 +508,23 @@ def _record_top_picks(
                 "breakeven": level,
                 "breakeven_move_pct": move,
                 "contract_note": None if contract else note,
+                "sector": candidate.get("sector"),
+                "stop_price": plan["stop_price"],
+                "target_price": plan["target_price"],
+                "exit_plan": "\n".join(plan["lines"]),
+                "implied_volatility": contract.get("implied_volatility"),
+                "hv30": trend_rows.get(symbol, {}).get("hv30"),
             }
         )
 
     with db.cursor() as cur:
         cur.execute(
-            "INSERT OR REPLACE INTO pick_runs (scan_ts, session, candidates, picks_count) VALUES (?, ?, ?, ?)",
-            (scan_ts, session, sum(1 for c in candidates if c.get("eligible")), len(records)),
+            "INSERT OR REPLACE INTO pick_runs (scan_ts, session, candidates, picks_count, market_regime, market_note) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                scan_ts, session, sum(1 for c in candidates if c.get("eligible")), len(records),
+                market["regime"], market["note"],
+            ),
         )
         for record in records:
             columns = ", ".join(record)
