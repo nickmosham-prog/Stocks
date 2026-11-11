@@ -9,6 +9,7 @@ from app import db
 from app.config import load_watchlist
 from app.datasource.composite import options_provider_label
 from app.market_calendar import current_session, is_market_day, now_et
+from app.scan import scorecard
 
 router = APIRouter(prefix="/api")
 
@@ -166,6 +167,14 @@ def get_picks():
             cur.execute("SELECT * FROM top_picks WHERE scan_ts = ? ORDER BY rank", (run["scan_ts"],))
             rows = cur.fetchall()
     return {"run": dict(run) if run else None, "rows": _rows_to_dicts(rows)}
+
+
+@router.get("/scorecard")
+def get_scorecard():
+    """Every logged Top Pick and how it has done since (see
+    app/scan/scorecard.py), newest first, with headline numbers."""
+    rows = scorecard.load_rows()
+    return {"summary": scorecard.summarize(rows), "rows": rows}
 
 
 @router.get("/options-trades")

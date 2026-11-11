@@ -27,6 +27,7 @@
     <button class="tab" data-tab="signals">Signals</button>
     <button class="tab" data-tab="all">All Stocks</button>
     <button class="tab" data-tab="options">Options Flow</button>
+    <button class="tab" data-tab="scorecard">Scorecard</button>
   </nav>
 
   <main>
@@ -102,6 +103,34 @@
         </thead>
         <tbody id="options-body">
           <tr><td colspan="8" class="empty">No unusual options activity yet. This fills in after the next scan.</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section id="scorecard-view" hidden>
+      <p class="disclaimer">
+        Every Top Pick is recorded the first time it appears each day, then followed: the stock's
+        return after 1, 5 and 20 trading days next to the S&amp;P 500's, whether the exit plan's stop
+        or target came first, and the option idea's price. Results count from the price at the
+        moment of the pick, and ignore trading costs.
+      </p>
+      <div id="scorecard-summary" class="score-tiles"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>Picked</th>
+            <th>Symbol</th>
+            <th>Entry</th>
+            <th>Now</th>
+            <th>1 day</th>
+            <th>5 days</th>
+            <th>20 days</th>
+            <th>vs S&amp;P (5d)</th>
+            <th>Option idea</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody id="scorecard-body">
+          <tr><td colspan="10" class="empty">Loading...</td></tr>
         </tbody>
       </table>
     </section>

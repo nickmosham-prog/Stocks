@@ -30,6 +30,7 @@ from app.scan import (
     options_strategy,
     picks,
     rvol,
+    scorecard,
 )
 
 log = logging.getLogger(__name__)
@@ -530,4 +531,9 @@ def _record_top_picks(
             columns = ", ".join(record)
             placeholders = ", ".join(f":{c}" for c in record)
             cur.execute(f"INSERT INTO top_picks ({columns}) VALUES ({placeholders})", record)
+    try:
+        spy_price = rows_by_symbol.get(scorecard.BENCHMARK, {}).get("price")
+        scorecard.log_picks(records, session, spy_price, market["regime"])
+    except Exception:
+        log.exception("scorecard logging failed")
     return records

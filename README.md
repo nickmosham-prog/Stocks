@@ -243,6 +243,39 @@ history (needed for the 200-day average and 52-week high) plus the extra
 fundamentals fields, once. This can take several minutes before the
 dashboard comes up; later starts are fast.
 
+## Scorecard (are the picks any good?)
+
+Every Top Pick is recorded the first time it appears each day during the
+regular session, with the stock price at that moment as the entry. The
+**Scorecard** tab then follows each one:
+
+- **Stock return** after 1, 5 and 20 trading days, next to the S&P 500's
+  (SPY) return over the same days, and the return so far.
+- **Target or stop first?** Whether the exit plan's target or stop was
+  reached first, judged on daily highs and lows from the day after the
+  pick, for up to 20 trading days. A day that touches both counts as
+  stopped out, since the order within a day isn't known.
+- **Option idea**: the suggested call's price now, and its change at 5, 10
+  and 20 trading days.
+
+The tiles at the top summarize it: how many picks rose after 5 days, the
+average return, how that compares with the S&P 500, the average result of
+the option ideas, and targets hit versus stops. Once at least 5 picks have
+a 5-day result, the digest email adds a one-line track record.
+
+Things to know when reading it:
+- **Small samples mislead.** Fewer than about 30 picks with a 5-day result
+  is too few to judge, and the tab says so until then.
+- Results count from the price at the moment of the pick and ignore
+  trading costs and the bid/ask spread, so real results would be a little
+  worse, especially for options.
+- Option prices are only checked while the market is open (at startup and
+  at 3:45pm ET), so the app has to be running then. Each checkpoint is the
+  first price seen on or after that day.
+- Stock results use the daily price history, which the app refreshes at
+  startup, so they fill in even if the app was closed at the end of a day.
+- The record is permanent: the 30-day history cleanup never touches it.
+
 ## Fundamentals quality gate
 
 The BUY Setup tier (email and dashboard badge) additionally requires the
@@ -373,6 +406,7 @@ If OpenD uses a different port than the default 11111, add
   session (pre-market or regular) its numbers come from.
 - **Options Flow** - tickers with unusual options volume/open-interest,
   plus implied volatility (IV) per contract.
+- **Scorecard** - every past pick and how it did (see **Scorecard** above).
 
 The status bar at the top shows when the last scan finished and how many
 tickers failed. It turns red if the market is open and no scan has

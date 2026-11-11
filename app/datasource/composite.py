@@ -50,6 +50,11 @@ class CompositeSource(DataSource):
             lambda: self.base.get_option_chain(symbol, expirations=expirations),
         )
 
+    def get_option_marks(self, codes: list[str]) -> dict[str, float]:
+        """Batched current prices for moomoo-coded option contracts (used by
+        the scorecard). Empty when moomoo is unreachable."""
+        return self.options_client.get_option_marks(codes) if codes else {}
+
     def get_bulk_intraday_bars(self, symbols, period, interval, prepost) -> dict[str, pd.DataFrame]:
         return self.base.get_bulk_intraday_bars(symbols, period, interval, prepost)
 

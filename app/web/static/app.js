@@ -199,6 +199,74 @@ function renderPicks(data) {
   });
 }
 
+function signedPct(v, digits = 1) {
+  if (v === null || v === undefined) return "&mdash;";
+  return `<span class="${signClass(v)}">${v > 0 ? "+" : ""}${fmtNum(v, digits)}%</span>`;
+}
+
+function scoreTile(label, value, note) {
+  return `<div class="score-tile"><div class="score-tile-label">${label}</div><div class="score-tile-value">${value}</div><div class="score-tile-note">${note || ""}</div></div>`;
+}
+
+const SCORECARD_MIN_SAMPLE = 30;
+
+function renderScorecard(data) {
+  const s = data.summary;
+  const tbody = el("scorecard-body");
+  if (!data.rows.length) {
+    el("scorecard-summary").innerHTML = "";
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">No picks recorded yet. Each Top Pick is logged the first time it appears during regular market hours, and its results fill in over the following days.</td></tr>`;
+    return;
+  }
+  const sample =
+    s.with_5d_result < SCORECARD_MIN_SAMPLE
+      ? `Only ${s.with_5d_result} pick${s.with_5d_result === 1 ? " has" : "s have"} a 5-day result so far. Treat these numbers as early: under about ${SCORECARD_MIN_SAMPLE} is too few to judge.`
+      : `Based on ${s.with_5d_result} picks with a 5-day result.`;
+  el("scorecard-summary").innerHTML =
+    scoreTile("Picks tracked", s.total_picks, `${s.with_5d_result} with a 5-day result`) +
+    scoreTile("Up after 5 days", s.win_rate_5d_pct === null ? "&mdash;" : fmtNum(s.win_rate_5d_pct, 0) + "%", "share of picks that rose") +
+    scoreTile("Average after 5 days", signedPct(s.avg_ret_5d_pct), `S&amp;P 500: ${signedPct(s.avg_spy_ret_5d_pct)}`) +
+    scoreTile("Beat the S&P by", signedPct(s.avg_excess_5d_pct), "average, over 5 days") +
+    scoreTile("Option ideas after 5 days", signedPct(s.avg_option_ret_5d_pct, 0), `${s.options_with_5d_result} tracked`) +
+    scoreTile("Target vs stop", `${s.targets_hit} / ${s.stopped_out}`, "hit target / stopped out") +
+    `<div class="score-sample">${sample}</div>`;
+
+  tbody.innerHTML = data.rows
+    .map((r) => {
+      const excess = r.ret_5d_pct === null || r.spy_ret_5d_pct === null ? null : r.ret_5d_pct - r.spy_ret_5d_pct;
+      const optionRet =
+        r.option_entry_price && r.option_last_price ? (r.option_last_price / r.option_entry_price - 1) * 100 : null;
+      const option = !r.contract_symbol
+        ? "&mdash;"
+        : `<div>CALL $${fmtNum(r.strike)} exp ${esc(r.expiration)}</div><div class="contract-note">$${fmtNum(r.option_entry_price)} &rarr; ${
+            r.option_last_price === null ? "not priced yet" : "$" + fmtNum(r.option_last_price) + " (" + signedPct(optionRet, 0) + ")"
+          }</div>`;
+      const result =
+        r.outcome === "target"
+          ? `<span class="fund-badge pass">Target hit</span>`
+          : r.outcome === "stopped"
+            ? `<span class="fund-badge fail">Stopped out</span>`
+            : `<span class="fund-badge unknown">${r.days_elapsed >= 20 ? "Neither" : "Open"}</span>`;
+      return `
+    <tr class="clickable" data-symbol="${esc(r.symbol)}">
+      <td data-label="Picked">${esc(r.pick_date)}</td>
+      <td data-label="Symbol" class="symbol-cell">${esc(r.symbol)}</td>
+      <td data-label="Entry">$${fmtNum(r.entry_price)}</td>
+      <td data-label="Now">${signedPct(r.ret_latest_pct)}</td>
+      <td data-label="1 day">${signedPct(r.ret_1d_pct)}</td>
+      <td data-label="5 days">${signedPct(r.ret_5d_pct)}</td>
+      <td data-label="20 days">${signedPct(r.ret_20d_pct)}</td>
+      <td data-label="vs S&amp;P (5d)">${signedPct(excess)}</td>
+      <td data-label="Option idea">${option}</td>
+      <td data-label="Result">${result}</td>
+    </tr>`;
+    })
+    .join("");
+  tbody.querySelectorAll("tr[data-symbol]").forEach((tr) => {
+    tr.addEventListener("click", () => openDrilldown(tr.dataset.symbol));
+  });
+}
+
 function renderSignals(rows, tradesBySymbol) {
   const tbody = el("signals-body");
   if (!rows.length) {
@@ -367,6 +435,7 @@ function setActiveTab(tab) {
   el("signals-view").hidden = tab !== "signals";
   el("table-view").hidden = tab !== "all";
   el("options-view").hidden = tab !== "options";
+  el("scorecard-view").hidden = tab !== "scorecard";
   refresh();
 }
 
@@ -432,6 +501,8 @@ async function refresh() {
     const tradesBySymbol = {};
     trades.rows.forEach((t) => (tradesBySymbol[t.symbol] = t));
     renderSignals(rankings.rows, tradesBySymbol);
+  } else if (state.tab === "scorecard") {
+    renderScorecard(await fetchJSON("/api/scorecard"));
   } else if (state.tab === "options") {
     const data = await fetchJSON("/api/options?limit=50");
     renderOptions(data.rows);

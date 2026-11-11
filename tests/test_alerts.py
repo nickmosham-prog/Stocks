@@ -410,6 +410,7 @@ def _fake_settings_for_digest(picks_enabled=True):
 def test_send_picks_digest_sends_once_per_slot(monkeypatch):
     monkeypatch.setattr(alerts, "load_settings", _fake_settings_for_digest)
     monkeypatch.setattr(alerts, "_latest_pick_run", lambda now: (_RUN, [_pick()]))
+    monkeypatch.setattr(alerts.scorecard, "track_record_line", lambda: None)
     log = []
     monkeypatch.setattr(alerts, "_last_alert_time", lambda symbol, kind: log[-1] if log else None)
     monkeypatch.setattr(alerts, "_record_alert", lambda symbol, score, sent_at, kind: log.append(sent_at))

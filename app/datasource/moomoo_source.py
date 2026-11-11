@@ -228,6 +228,23 @@ class MoomooOptionsClient:
             return None
         return normalize_snapshot(snapshot) or None
 
+    def get_option_marks(self, codes: list[str]) -> dict[str, float]:
+        """Current price (bid/ask midpoint, else last) for moomoo contract
+        codes, in batched snapshot requests. Missing/failed codes are absent."""
+        marks: dict[str, float] = {}
+        for i in range(0, len(codes), SNAPSHOT_BATCH):
+            snap = self._call("get_market_snapshot", codes[i : i + SNAPSHOT_BATCH])
+            if snap is None or "code" not in snap.columns:
+                continue
+            for _, row in snap.iterrows():
+                bid, ask = _num(row.get("bid_price"), None), _num(row.get("ask_price"), None)
+                last = _num(row.get("last_price"), None)
+                if bid and ask and bid > 0 and ask > 0:
+                    marks[str(row["code"])] = (bid + ask) / 2.0
+                elif last and last > 0:
+                    marks[str(row["code"])] = last
+        return marks
+
     def close(self) -> None:
         ctx, self._ctx = self._ctx, None
         if ctx is not None:

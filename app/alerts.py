@@ -33,7 +33,7 @@ from email.mime.text import MIMEText
 
 from app import db
 from app.config import load_settings
-from app.scan import breakdown_setup, buy_setup
+from app.scan import breakdown_setup, buy_setup, scorecard
 from app.scan.numeric import is_valid
 
 log = logging.getLogger(__name__)
@@ -371,8 +371,10 @@ def _format_pick(pick: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_picks_digest(slot_label: str, picks: list[dict], run: dict) -> tuple[str, str]:
-    footer = (
+def _format_picks_digest(
+    slot_label: str, picks: list[dict], run: dict, track_record: str | None = None
+) -> tuple[str, str]:
+    footer = (f"\n\n{track_record}" if track_record else "") + (
         "\n\nHow picks are chosen: each one passed the fundamentals check (profitable,\n"
         "reasonable P/E, growing revenue), is above its 50-day average, is up\n"
         "today, and has no earnings report in the next few days; they are ranked\n"
@@ -443,7 +445,12 @@ def send_picks_digest(slot_label: str, now: datetime | None = None) -> bool:
             slot_label, DIGEST_MAX_SCAN_AGE_MINUTES,
         )
         return False
-    subject, body = _format_picks_digest(slot_label, picks, run)
+    try:
+        track_record = scorecard.track_record_line()
+    except Exception:
+        log.exception("could not build the track-record line")
+        track_record = None
+    subject, body = _format_picks_digest(slot_label, picks, run, track_record)
     if not _send_email(email_cfg, subject, body):
         return False
     _record_alert(slot_key, None, now, DIGEST_KIND)

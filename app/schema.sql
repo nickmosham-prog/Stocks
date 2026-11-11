@@ -205,6 +205,47 @@ CREATE TABLE IF NOT EXISTS top_picks (
 );
 CREATE INDEX IF NOT EXISTS idx_top_picks_scan_ts ON top_picks(scan_ts, rank);
 
+-- Scorecard: one permanent row per (day, symbol) the first time a stock is
+-- a Top Pick in the regular session, later filled in with what happened.
+-- Never pruned (see app/maintenance.py).
+CREATE TABLE IF NOT EXISTS pick_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pick_date TEXT NOT NULL,            -- YYYY-MM-DD (ET)
+    symbol TEXT NOT NULL,
+    first_scan_ts TEXT NOT NULL,
+    rank INTEGER,
+    pick_score REAL,
+    sector TEXT,
+    market_regime TEXT,
+    entry_price REAL,
+    spy_entry_price REAL,
+    stop_price REAL,
+    target_price REAL,
+    contract_symbol TEXT,
+    option_type TEXT,
+    strike REAL,
+    expiration TEXT,
+    option_entry_price REAL,
+    days_elapsed INTEGER,               -- trading days of daily bars since the pick
+    last_close REAL,
+    ret_latest_pct REAL,
+    ret_1d_pct REAL,
+    ret_5d_pct REAL,
+    ret_20d_pct REAL,
+    spy_ret_1d_pct REAL,
+    spy_ret_5d_pct REAL,
+    spy_ret_20d_pct REAL,
+    outcome TEXT,                       -- 'target' / 'stopped' / NULL (neither yet)
+    outcome_date TEXT,
+    option_last_price REAL,
+    option_last_checked TEXT,
+    option_ret_5d_pct REAL,
+    option_ret_10d_pct REAL,
+    option_ret_20d_pct REAL,
+    updated_at TEXT,
+    UNIQUE (pick_date, symbol)
+);
+
 -- Recommended option contract per qualifying ticker each scan cycle
 -- (calls on confirmed bullish setups, puts on confirmed bearish ones).
 CREATE TABLE IF NOT EXISTS options_trade_recommendations (

@@ -17,7 +17,7 @@ from app.config import load_settings, load_watchlist
 from app.datasource.base import DataSource
 from app.market_calendar import is_market_day, is_premarket_window, is_regular_window
 from app import alerts, maintenance
-from app.scan import fundamentals, runner, trend, volume_profile
+from app.scan import fundamentals, runner, scorecard, trend, volume_profile
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ def _eod_job(source: DataSource) -> None:
     succeeded, failed = volume_profile.refresh_historical_data(source, symbols)
     log.info("EOD refresh complete: %d succeeded, %d failed", succeeded, failed)
     log.info("trend metrics refreshed for %d symbols", trend.refresh_all(symbols))
+    _scorecard_job(source)
     maintenance.prune_old_rows()
 
 
@@ -62,6 +63,16 @@ def _fundamentals_job(source: DataSource) -> None:
     # gain a new allowed value on an existing user's database via
     # ALTER TABLE (SQLite has no ADD CONSTRAINT) - logging is enough here,
     # same as how bootstrap_if_needed already reports without a scan_runs row.
+
+
+def _scorecard_job(source: DataSource) -> None:
+    """Fills in how past picks have done since (stock results from the
+    daily bars; option prices only while the market is open)."""
+    try:
+        result = scorecard.update_outcomes(source)
+        log.info("scorecard updated: %d stock results, %d option prices", result["stocks"], result["options"])
+    except Exception:
+        log.exception("scorecard update failed")
 
 
 def _picks_digest_job(slot_label: str, source: DataSource) -> None:
@@ -138,6 +149,17 @@ def create_scheduler(source: DataSource) -> BackgroundScheduler:
         CronTrigger(day_of_week="mon-fri", hour=int(fundamentals_hour), minute=int(fundamentals_minute)),
         args=[source],
         id="fundamentals_refresh",
+    )
+    # Scorecard: once at startup (after the history bootstrap), and shortly
+    # before the close each day - the app is often stopped at 4pm, before
+    # the EOD refresh would otherwise do it.
+    scheduler.add_job(_scorecard_job, args=[source], id="scorecard_startup", next_run_time=now)
+    scheduler.add_job(
+        _scorecard_job,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=45),
+        args=[source],
+        id="scorecard_update",
+        misfire_grace_time=600,
     )
     if settings.get("picks", "enabled", default=True):
         for slot in settings.get("picks", "digest_times", default=["10:00", "15:00"]):
