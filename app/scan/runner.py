@@ -32,6 +32,7 @@ from app.scan import (
     rvol,
     scorecard,
 )
+from app.scan.numeric import is_valid
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +73,27 @@ def _filter_session_bars(bars: pd.DataFrame, session: str) -> pd.DataFrame:
     return filtered
 
 
-def _score_symbol(symbol: str, bars: pd.DataFrame, session: str, bucket_minutes: int) -> dict | None:
+MAX_LIVE_QUOTE_GAP = 0.15
+
+
+def _live_levels(quote: dict | None, session: str, bar_price: float) -> dict | None:
+    """{price, high, low} from a live quote for this session, or None if
+    there isn't a usable one. A quote more than 15% away from the latest
+    bar is ignored: that is a bad quote or a symbol mix-up, not a move."""
+    if not quote:
+        return None
+    prefix = "pre_" if session == "premarket" else ""
+    price = quote.get(f"{prefix}price")
+    if not is_valid(price) or price <= 0:
+        return None
+    if bar_price > 0 and abs(price / bar_price - 1.0) > MAX_LIVE_QUOTE_GAP:
+        return None
+    return {"price": float(price), "high": quote.get(f"{prefix}high"), "low": quote.get(f"{prefix}low")}
+
+
+def _score_symbol(
+    symbol: str, bars: pd.DataFrame, session: str, bucket_minutes: int, quote: dict | None = None
+) -> dict | None:
     session_bars = _filter_session_bars(bars, session)
     if session_bars.empty:
         return None
@@ -85,7 +106,15 @@ def _score_symbol(symbol: str, bars: pd.DataFrame, session: str, bucket_minutes:
     low_series = session_bars["Low"].dropna()
     today_high = float(high_series.max()) if not high_series.empty else price
     today_low = float(low_series.min()) if not low_series.empty else price
+    # Volume always comes from the bars: the RVOL baseline is built from the
+    # same bars' history, and mixing in another feed's volume would skew it.
     cum_volume_today = float(session_bars["Volume"].fillna(0).sum())
+
+    live = _live_levels(quote, session, price)
+    if live:
+        price = live["price"]
+        today_high = max(today_high, price, live["high"] if is_valid(live["high"]) else price)
+        today_low = min(today_low, price, live["low"] if is_valid(live["low"]) and live["low"] > 0 else price)
 
     current_bucket = bucket_index(now_et(), session, bucket_minutes)
     cum_avg = rvol.cumulative_avg_volume(symbol, session, current_bucket)
@@ -172,6 +201,12 @@ def _run_scan(source: DataSource, session: str) -> dict:
         symbols, period="1d", interval=f"{bucket_minutes}m", prepost=True
     )
 
+    try:
+        quotes = source.get_realtime_quotes(symbols) or {}
+    except Exception:
+        log.exception("live quotes failed - using bar prices for this scan")
+        quotes = {}
+
     prelim: dict[str, dict] = {}
     failed = []
     for symbol in symbols:
@@ -180,7 +215,7 @@ def _run_scan(source: DataSource, session: str) -> dict:
             failed.append(symbol)
             continue
         try:
-            result = _score_symbol(symbol, bars, session, bucket_minutes)
+            result = _score_symbol(symbol, bars, session, bucket_minutes, quotes.get(symbol))
         except Exception:
             log.exception("scoring failed for %s", symbol)
             result = None

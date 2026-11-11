@@ -25,6 +25,12 @@ class DataSource(ABC):
         from the returned dict (caller marks them data_stale).
         """
 
+    def get_realtime_quotes(self, symbols: list[str]) -> dict[str, dict]:
+        """Optional live quotes: {symbol: {price, high, low, pre_price,
+        pre_high, pre_low}} (any field may be None). Sources without a live
+        feed return {} and the scan uses the intraday bars instead."""
+        return {}
+
     @abstractmethod
     def get_profile_history(self, symbol: str, days: int, interval: str) -> pd.DataFrame | None:
         """Historical intraday bars for one symbol, used to build the volume profile."""

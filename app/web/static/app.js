@@ -450,6 +450,12 @@ document.querySelectorAll("th[data-sort]").forEach((th) => {
   });
 });
 
+function pricesLabel(src) {
+  if (src === "moomoo") return "Moomoo (live)";
+  if (src && src.startsWith("yahoo (")) return "Yahoo (moomoo unavailable)";
+  return "Yahoo";
+}
+
 function optionsLabel(src) {
   if (src === "moomoo") return "Moomoo";
   if (src && src.startsWith("yahoo (")) return "Yahoo (moomoo unavailable)";
@@ -480,8 +486,8 @@ async function refreshStatus() {
     const dot = el("status-dot");
     dot.className = "status-dot " + (s.market_open ? "open" : "closed");
     el("status-text").textContent = s.market_open
-      ? `Market open (${s.current_session}) \u00b7 ${s.tickers_tracked} tickers tracked \u00b7 Options data: ${optionsLabel(s.options_source)}`
-      : `Market closed \u00b7 ${s.tickers_tracked} tickers tracked \u00b7 Options data: ${optionsLabel(s.options_source)}`;
+      ? `Market open (${s.current_session}) \u00b7 ${s.tickers_tracked} tickers tracked \u00b7 Prices: ${pricesLabel(s.prices_source)} \u00b7 Options data: ${optionsLabel(s.options_source)}`
+      : `Market closed \u00b7 ${s.tickers_tracked} tickers tracked \u00b7 Prices: ${pricesLabel(s.prices_source)} \u00b7 Options data: ${optionsLabel(s.options_source)}`;
     renderScanHealth(s);
     el("status-time").textContent =
       new Date(s.server_time_et).toLocaleTimeString("en-US", { timeZone: "America/New_York" }) + " ET";

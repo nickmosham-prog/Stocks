@@ -38,8 +38,12 @@ def main() -> None:
     source = create_source(settings)
     if isinstance(source, CompositeSource):
         ok, message = source.options_client.check_connection()
-        source.last_options_provider = "moomoo" if ok else "yahoo (moomoo unavailable)"
-        log.info("moomoo options data: %s", message if ok else message + " - using Yahoo until it's reachable")
+        fallback = "moomoo" if ok else "yahoo (moomoo unavailable)"
+        if source.use_for_options:
+            source.last_options_provider = fallback
+        if source.use_for_prices:
+            source.last_prices_provider = fallback
+        log.info("moomoo: %s", message if ok else message + " - using Yahoo until it's reachable")
         atexit.register(source.close)
     log.info("checking historical volume profile before starting scan loops...")
     bootstrap_if_needed(source)

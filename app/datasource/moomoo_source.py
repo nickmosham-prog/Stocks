@@ -25,7 +25,8 @@ REQUIRED_SNAPSHOT_COLUMNS = {"code", "option_type", "strike_time", "option_strik
 
 
 def _moomoo_code(symbol: str) -> str:
-    return f"US.{symbol.upper()}"
+    # Yahoo writes share classes with a dash (BRK-B); moomoo uses a dot (BRK.B).
+    return f"US.{symbol.upper().replace('-', '.')}"
 
 
 def _normalize_iv(raw) -> float | None:
@@ -71,6 +72,13 @@ def normalize_snapshot(df: pd.DataFrame) -> list[dict]:
     return contracts
 
 
+MAX_REJECTED_CODES = 5  # more rejected tickers than this in one pass means a general failure
+
+
+class _TooManyRejected(Exception):
+    pass
+
+
 CALL_TIMEOUT_SECONDS = 15
 RETRY_AFTER_SECONDS = 300
 
@@ -112,6 +120,8 @@ class MoomooOptionsClient:
         self._down_until = 0.0
         self._lock = threading.Lock()
         self._warned: set[str] = set()
+        self._unknown_codes: set[str] = set()  # stock codes moomoo rejected; skipped from then on
+        self._quotes_down_until = 0.0
 
     def _warn_once(self, key: str, message: str, *args, **kwargs) -> None:
         if key not in self._warned:
@@ -144,7 +154,7 @@ class MoomooOptionsClient:
     def _mark_down(self, reason: str) -> None:
         if self._down_until <= time.monotonic():
             log.warning(
-                "moomoo options data unavailable (%s) - using Yahoo, retrying in %d min",
+                "moomoo unavailable (%s) - using Yahoo, retrying in %d min",
                 reason, self._retry_after // 60,
             )
         self._down_until = time.monotonic() + self._retry_after
@@ -165,16 +175,16 @@ class MoomooOptionsClient:
             try:
                 ret, data = self._invoke(name, *args, **kwargs)
             except ImportError:
-                self._warn_once("import", "moomoo-api is not installed - using Yahoo for options (pip install -r requirements.txt)")
+                self._warn_once("import", "moomoo-api is not installed - using Yahoo instead (pip install -r requirements.txt)")
                 return None
             except (ConnectionError, TimeoutError) as exc:
                 self._mark_down(str(exc))
                 return None
             except Exception:
-                self._warn_once(f"exc-{name}", "moomoo %s failed - using Yahoo for options", name, exc_info=True)
+                self._warn_once(f"exc-{name}", "moomoo %s failed - using Yahoo instead", name, exc_info=True)
                 return None
         if ret != 0:  # moomoo.RET_OK == 0
-            self._warn_once(f"ret-{name}-{data}", "moomoo %s returned an error: %s - using Yahoo for options", name, data)
+            self._warn_once(f"ret-{name}-{data}", "moomoo %s returned an error: %s - using Yahoo instead", name, data)
             return None
         return data if isinstance(data, pd.DataFrame) else None
 
@@ -227,6 +237,79 @@ class MoomooOptionsClient:
             self._warn_once("columns", "moomoo snapshot is missing columns %s - using Yahoo for options", sorted(missing))
             return None
         return normalize_snapshot(snapshot) or None
+
+    def _is_down(self) -> bool:
+        return time.monotonic() < self._down_until
+
+    def _snapshot_rows(self, codes: list[str], rejected: list[str]) -> list[dict]:
+        """Snapshot rows for `codes`. One code moomoo doesn't recognise fails
+        the whole request, so a failed batch is split in half until the bad
+        code is isolated (collected in `rejected`)."""
+        if not codes or self._is_down():
+            return []
+        snap = self._call("get_market_snapshot", codes)
+        if snap is not None:
+            return snap.to_dict("records")
+        if self._is_down():  # connection problem, not a bad code
+            return []
+        if len(codes) == 1:
+            rejected.append(codes[0])
+            if len(rejected) > MAX_REJECTED_CODES:
+                raise _TooManyRejected()
+            return []
+        middle = len(codes) // 2
+        return self._snapshot_rows(codes[:middle], rejected) + self._snapshot_rows(codes[middle:], rejected)
+
+    def get_stock_snapshots(self, symbols: list[str]) -> dict[str, dict]:
+        """Live quotes for the watchlist: {symbol: {price, high, low,
+        pre_price, pre_high, pre_low}}. Symbols moomoo can't quote are
+        simply absent (and skipped from then on); {} when OpenD is
+        unreachable or live quotes are failing across the board."""
+        if time.monotonic() < self._quotes_down_until:
+            return {}
+        by_code = {_moomoo_code(s): s for s in symbols}
+        codes = [code for code in by_code if code not in self._unknown_codes]
+        rejected: list[str] = []
+        rows: list[dict] = []
+        try:
+            for i in range(0, len(codes), SNAPSHOT_BATCH):
+                rows.extend(self._snapshot_rows(codes[i : i + SNAPSHOT_BATCH], rejected))
+        except _TooManyRejected:
+            # Not a few bad tickers but a general failure (rate limit, missing
+            # quote rights): don't blacklist the watchlist, just back off.
+            # Options still work, so only live quotes pause.
+            self._quotes_down_until = time.monotonic() + self._retry_after
+            log.warning(
+                "moomoo is rejecting live stock quotes - using Yahoo prices, retrying in %d min",
+                self._retry_after // 60,
+            )
+            return {}
+        if len(codes) > 1 and len(rejected) == len(codes):
+            # Every single ticker "unknown" is the same general failure on a short watchlist.
+            self._quotes_down_until = time.monotonic() + self._retry_after
+            log.warning(
+                "moomoo is rejecting live stock quotes - using Yahoo prices, retrying in %d min",
+                self._retry_after // 60,
+            )
+            return {}
+        for code in rejected:
+            self._unknown_codes.add(code)
+            log.warning("moomoo has no live quote for %s - it keeps its Yahoo price", by_code[code])
+
+        quotes: dict[str, dict] = {}
+        for row in rows:
+            symbol = by_code.get(str(row.get("code")))
+            if symbol is None:
+                continue
+            quotes[symbol] = {
+                "price": _num(row.get("last_price"), None),
+                "high": _num(row.get("high_price"), None),
+                "low": _num(row.get("low_price"), None),
+                "pre_price": _num(row.get("pre_price"), None),
+                "pre_high": _num(row.get("pre_high_price"), None),
+                "pre_low": _num(row.get("pre_low_price"), None),
+            }
+        return quotes
 
     def get_option_marks(self, codes: list[str]) -> dict[str, float]:
         """Current price (bid/ask midpoint, else last) for moomoo contract

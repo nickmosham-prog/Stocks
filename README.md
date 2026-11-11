@@ -75,6 +75,27 @@ automatically.
 On first launch it will spend a few minutes building the historical
 volume baseline before the first scan, since nothing has been fetched yet.
 
+## Daily use on a Mac (no Terminal commands)
+
+Two files in this folder can be double-clicked in Finder:
+
+- **Start Screener.command** - starts the screener and opens the dashboard
+  when it is ready. It keeps the Mac awake while the screener runs (the
+  screen can still turn off), and opens moomoo OpenD if it is installed.
+  If the screener is already running, it just opens the dashboard. To
+  stop the screener, click its window and press Control+C.
+- **Update Screener.command** - downloads the latest version and installs
+  anything new it needs. Stop the screener first, then start it again
+  afterwards. Updating is its own step on purpose, so a new version only
+  arrives when you choose.
+
+To put one on the Desktop, right-click it in Finder, choose **Make Alias**,
+and drag the alias to the Desktop. The first time, macOS may ask you to
+confirm opening it (right-click, then **Open**).
+
+Keep the lid open and the Mac plugged in: a closed lid still puts it to
+sleep, and a sleeping Mac runs no scans and sends no emails.
+
 ## Configuring
 
 - **`config/settings.yaml`** - scan intervals, market hours, scoring
@@ -375,8 +396,8 @@ Yahoo** and tries moomoo again 5 minutes later.
    python -m app.tools.check_moomoo AAPL
    ```
    It connects to OpenD and lists AAPL's option expirations. It then shows
-   one raw moomoo quote, and the option idea the screener would pick from
-   moomoo's data next to Yahoo's. If step 2 lists no expirations, your
+   one raw moomoo quote, the option idea the screener would pick from
+   moomoo's data next to Yahoo's, and moomoo's live stock prices. If step 2 lists no expirations, your
    account may not have US options quote rights in OpenAPI; moomoo grants
    quote rights by account tier.
 4. **Switch it on** by adding these lines to `config/secrets.yaml`, your
@@ -393,6 +414,34 @@ Yahoo** and tries moomoo again 5 minutes later.
 
 If OpenD uses a different port than the default 11111, add
 `moomoo: {port: <your port>}` under `options_source` as well.
+
+## Using moomoo for live stock prices (optional)
+
+Yahoo's price bars can lag by a few minutes. With OpenD running (see the
+section above), the screener can instead take each stock's **price and
+day high/low** from moomoo's live quotes:
+
+- One request covers the whole watchlist each scan.
+- **Volume still comes from Yahoo**, because "relative volume" compares
+  today with a history built from the same Yahoo bars; mixing in another
+  feed's volume would distort it.
+- Any symbol moomoo can't quote keeps its Yahoo price, and so does
+  everything whenever OpenD is unreachable. A live quote more than 15%
+  away from the latest bar is ignored as a bad quote.
+
+To turn it on, first check that live quotes come through:
+```bash
+python -m app.tools.check_moomoo AAPL
+```
+Step 5 of its output shows how many watchlist symbols moomoo quoted and
+its price next to Yahoo's. Then add to `config/secrets.yaml`:
+```yaml
+realtime_prices:
+  provider: moomoo
+```
+and restart. The status bar shows **"Prices: Moomoo (live)"**, or "Yahoo
+(moomoo unavailable)" if OpenD can't be reached. This is independent of
+`options_source`: either can be on without the other.
 
 ## Dashboard
 
@@ -432,7 +481,8 @@ dashboard polls for new data every 30 seconds.
 - **`yfinance` is unofficial.** It scrapes/wraps Yahoo Finance endpoints
   with no SLA - it can be rate-limited, break, or change shape without
   notice. If scans start failing, check `logs/stocks.log` first.
-- **Data is free and delayed**, not real-time. Pre/post-market quotes can
+- **Data is free and delayed**, not real-time, unless you turn on moomoo
+  live prices (above), which covers price and day range but not volume. Pre/post-market quotes can
   be thin or stale for less-liquid names.
 - **No market-holiday calendar.** The scheduler only checks Monday-Friday,
   so it will still attempt (and mostly no-op or log warnings on) market
@@ -483,13 +533,16 @@ the network.
 
 ```
 main.py                  # entry point: starts scheduler + web server
+Start Screener.command   # double-click launcher for macOS
+Update Screener.command  # double-click updater for macOS
 config/                  # settings.yaml, watchlist.yaml
 app/
   config.py, db.py, schema.sql, market_calendar.py
-  scheduler.py            # pre-market/intraday/EOD jobs
-  datasource/             # Yahoo (yfinance) + optional moomoo options, behind one interface
+  scheduler.py            # scan, refresh, digest and scorecard jobs
+  maintenance.py          # prunes old scan history
+  datasource/             # Yahoo (yfinance) + optional moomoo options/live prices, behind one interface
   tools/                  # check_moomoo diagnostic
-  scan/                   # RVOL, breakout, options, news, alpha score
+  scan/                   # RVOL, breakout, options, alpha score, picks, exit plans, market backdrop, scorecard
   web/                    # FastAPI API + static dashboard
 tests/                    # pytest unit tests
 ```

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from app import db
 from app.config import load_watchlist
-from app.datasource.composite import options_provider_label
+from app.datasource.composite import options_provider_label, prices_provider_label
 from app.market_calendar import current_session, is_market_day, now_et
 from app.scan import scorecard
 
@@ -229,6 +229,7 @@ def get_status(request: Request):
         "server_time_et": now_et().isoformat(),
         "tickers_tracked": tracked,
         "options_source": options_provider_label(getattr(request.app.state, "data_source", None)),
+        "prices_source": prices_provider_label(getattr(request.app.state, "data_source", None)),
         "last_scan": dict(last_scan) if last_scan else None,
         "recent_runs": _rows_to_dicts(runs),
     }

@@ -128,6 +128,16 @@ options_source:
 retention:
   days: 30
 
+# Live stock prices. "yahoo" (default) uses the same 5-minute bars as
+# everything else, which can lag by a few minutes. "moomoo" overrides each
+# stock's price and day high/low with moomoo's live quote (needs OpenD
+# running, same as options_source above; uses its host/port). Volume always
+# comes from Yahoo's bars so relative volume stays consistent, and any
+# symbol moomoo can't quote keeps its Yahoo price.
+# Tip: turn this on in config/secrets.yaml, like options_source.
+realtime_prices:
+  provider: yahoo
+
 # Top Picks: a ranked list of the best bullish swing-trade ideas (days to
 # weeks) with plain-English reasons, risks, and a suggested call option -
 # the main "what should I look at buying" output. See app/scan/picks.py.
