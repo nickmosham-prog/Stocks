@@ -9,7 +9,7 @@ import logging
 
 import uvicorn
 
-from app import db, maintenance
+from app import db, keep_awake, maintenance
 from app.config import load_settings
 from app.datasource.composite import CompositeSource, create_source
 from app.scheduler import bootstrap_if_needed, create_scheduler
@@ -23,7 +23,7 @@ def _setup_logging(settings) -> None:
     logging.basicConfig(
         level=level,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-        handlers=[logging.FileHandler(log_path), logging.StreamHandler()],
+        handlers=[logging.FileHandler(log_path, encoding="utf-8"), logging.StreamHandler()],
     )
 
 
@@ -34,6 +34,9 @@ def main() -> None:
 
     db.init_db()
     maintenance.prune_old_rows()
+
+    if keep_awake.prevent_sleep():  # Windows only; a Mac uses caffeinate in its start file
+        atexit.register(keep_awake.release)
 
     source = create_source(settings)
     if isinstance(source, CompositeSource):

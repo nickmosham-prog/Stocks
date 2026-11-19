@@ -126,7 +126,7 @@ def init_db() -> None:
     comments, so this naive split on ";" is safe for this file specifically.
     """
     conn = get_connection()
-    with open(SCHEMA_PATH, "r") as f:
+    with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
         schema_sql = f.read()
 
     table_statements, index_statements = [], []

@@ -96,6 +96,46 @@ confirm opening it (right-click, then **Open**).
 Keep the lid open and the Mac plugged in: a closed lid still puts it to
 sleep, and a sleeping Mac runs no scans and sends no emails.
 
+## Running on Windows
+
+The screener runs the same way on a Windows PC. Three files in this folder
+can be double-clicked in File Explorer:
+
+- **Setup Screener (Windows).bat** - run once on a new PC. It creates the
+  screener's own Python folder (`.venv`) and installs what it needs.
+- **Start Screener (Windows).bat** - starts the screener and opens the
+  dashboard when it is ready. It opens moomoo OpenD if it is installed, and
+  keeps the PC awake while the screener runs (the screen can still turn
+  off; normal sleep comes back when the screener stops). If the screener is
+  already running, it just opens the dashboard. To stop it, click its
+  window, press Control+C, then Y.
+- **Update Screener (Windows).bat** - downloads the latest version and
+  installs anything new. Stop the screener first.
+
+First-time setup:
+
+1. Install **Python 3.12** from python.org. On the installer's first
+   screen, tick **"Add python.exe to PATH"**.
+2. Install **Git for Windows** from git-scm.com (the default choices are
+   fine).
+3. In PowerShell:
+   ```powershell
+   cd ~
+   git clone -b claude/stock-volume-alpha-dashboard-alj9xm https://github.com/nickmosham-prog/Stocks.git
+   ```
+   A GitHub sign-in window may appear the first time.
+4. Moving from another computer? Stop the screener there, then copy its
+   `config/secrets.yaml` (email login and moomoo settings) into
+   `Stocks\config\`, and its `data/stocks.db` (scorecard history) into
+   `Stocks\data\`. Use a USB stick or a cloud drive, not email:
+   secrets.yaml holds your email app password. Only run the screener on one
+   computer at a time, or every alert arrives twice.
+5. Double-click **Setup Screener (Windows).bat**.
+6. If you use moomoo: install **moomoo OpenD for Windows**, log in, keep
+   the Listening Address `127.0.0.1` and port `11111`, and never click
+   Unlock Trade. Optional check, in PowerShell from the Stocks folder:
+   `.venv\Scripts\python -m app.tools.check_moomoo AAPL`
+
 ## Configuring
 
 - **`config/settings.yaml`** - scan intervals, market hours, scoring

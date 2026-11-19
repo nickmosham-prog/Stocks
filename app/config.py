@@ -57,10 +57,10 @@ class Settings:
 
 @functools.lru_cache(maxsize=1)
 def load_settings() -> Settings:
-    with open(SETTINGS_PATH, "r") as f:
+    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     if SECRETS_PATH.exists():
-        with open(SECRETS_PATH, "r") as f:
+        with open(SECRETS_PATH, "r", encoding="utf-8") as f:
             secrets = yaml.safe_load(f) or {}
         raw = _deep_merge(raw, secrets)
     return Settings(raw=raw)
@@ -68,7 +68,7 @@ def load_settings() -> Settings:
 
 @functools.lru_cache(maxsize=1)
 def load_watchlist() -> list[str]:
-    with open(WATCHLIST_PATH, "r") as f:
+    with open(WATCHLIST_PATH, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f)
     tickers = raw.get("tickers", [])
     # de-dupe, preserve order, normalize case
